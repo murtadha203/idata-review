@@ -1,0 +1,169 @@
+/* طبقة التعليق — تُحقن فوق اللوحة ولا تمسّ شيئاً من تنسيقها. */
+:root{--rv-navy:#1A284A;--rv-blue:#2352FF;--rv-amber:#FAAD40;--rv-red:#EC4136;
+      --rv-line:#e5e7eb;--rv-mut:#6b7280;--rv-w:360px}
+
+body{padding-top:52px !important;padding-left:var(--rv-w) !important}
+body.rv-collapsed{padding-left:0 !important}
+
+/* ── الشريط العلويّ ──────────────────────────────────────────────────── */
+#rv-bar{position:fixed;inset:0 0 auto 0;height:52px;z-index:9000;
+  background:var(--rv-navy);color:#fff;display:flex;align-items:center;
+  gap:14px;padding:0 18px;font:14px/1 "Segoe UI","Noto Sans Arabic",sans-serif}
+#rv-bar .t{font-weight:700;font-size:15px;flex:1;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+#rv-bar a,#rv-bar button{color:#fff;background:rgba(255,255,255,.14);border:0;
+  border-radius:8px;padding:7px 13px;font:inherit;cursor:pointer;
+  text-decoration:none}
+#rv-bar a:hover,#rv-bar button:hover{background:rgba(255,255,255,.26)}
+#rv-bar .me{font-size:12.5px;opacity:.9}
+
+/* ── اللوح الجانبيّ ──────────────────────────────────────────────────── */
+#rv-panel{position:fixed;top:52px;bottom:0;left:0;width:var(--rv-w);z-index:8999;
+  background:#fff;border-inline-end:1px solid var(--rv-line);
+  display:flex;flex-direction:column;
+  font:14px/1.65 "Segoe UI","Noto Sans Arabic",sans-serif}
+body.rv-collapsed #rv-panel{display:none}
+#rv-panel header{padding:12px 16px;border-bottom:1px solid var(--rv-line);
+  display:flex;gap:8px;align-items:center}
+#rv-panel header .n{font-weight:700;color:var(--rv-navy);flex:1}
+#rv-panel .flt{font-size:12px;border:1px solid var(--rv-line);border-radius:8px;
+  padding:5px 8px;background:#fff}
+#rv-list{flex:1;overflow:auto;padding:10px 12px 40px}
+
+.rv-c{border:1px solid var(--rv-line);border-radius:11px;padding:11px 13px;
+  margin-bottom:10px;background:#fff;cursor:pointer;transition:.12s}
+.rv-c:hover{border-color:var(--rv-blue)}
+.rv-c.done{opacity:.55}
+.rv-c .h{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.rv-c .au{font-weight:700;font-size:12.5px;color:var(--rv-navy)}
+.rv-c .dt{font-size:11px;color:var(--rv-mut);margin-inline-start:auto}
+.rv-c .loc{font-size:11px;color:var(--rv-mut);
+  background:#f1f5f9;border-radius:6px;padding:2px 7px;display:inline-block;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rv-c .q{border-inline-start:3px solid var(--rv-amber);padding-inline-start:8px;
+  color:#475569;font-size:12.5px;margin:6px 0}
+.rv-c .b{white-space:pre-wrap;font-size:13.5px}
+.rv-c .acts{margin-top:7px;display:flex;gap:6px}
+.rv-c .acts button{font-size:11.5px;padding:4px 9px;border:1px solid var(--rv-line);
+  background:#fff;border-radius:7px;cursor:pointer;color:var(--rv-mut)}
+.rv-c .acts button:hover{border-color:var(--rv-blue);color:var(--rv-blue)}
+.rv-rep{margin-inline-start:14px;border-inline-start:2px solid var(--rv-line);
+  padding-inline-start:10px}
+.rv-empty{color:var(--rv-mut);font-size:13px;padding:18px 4px;text-align:center}
+
+/* ── محرّر التعليق ───────────────────────────────────────────────────────
+   **مرسوٌّ في اللوح لا طافٍ على الصفحة.** المحرّر الطافي كان يظهر عند موضع
+   التحديد، وهناك بالضبط تظهر قائمة التحديد التي يرسمها المتصفّح — وهي خارج
+   سلطة الصفحة فلا تُطفأ. فالرسوّ يحسم التزاحم بلا محاولة إخفاء ما لا نملكه. */
+#rv-editor{display:none;border-bottom:1px solid var(--rv-line);
+  padding:12px 14px;background:#f8fafc}
+#rv-editor.on{display:block}
+#rv-editor .loc{font-size:11px;color:var(--rv-mut);margin-bottom:7px;
+  background:#fff;border:1px solid var(--rv-line);border-radius:6px;
+  padding:3px 8px;display:inline-block;max-width:100%;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+#rv-editor .q{border-inline-start:3px solid var(--rv-amber);
+  padding-inline-start:8px;color:#475569;font-size:12.5px;margin-bottom:8px;
+  max-height:80px;overflow:auto;display:none}
+#rv-editor textarea{width:100%;min-height:82px;border:1px solid var(--rv-line);
+  border-radius:9px;padding:9px;font:inherit;resize:vertical;background:#fff}
+#rv-editor textarea:focus{outline:2px solid var(--rv-blue);outline-offset:-1px}
+#rv-editor .row{display:flex;gap:7px;margin-top:8px}
+#rv-editor .row button{flex:1;padding:9px;border:0;border-radius:9px;
+  background:var(--rv-blue);color:#fff;font:600 13px/1 inherit;cursor:pointer}
+#rv-editor .row button.g{background:#e2e8f0;color:#475569}
+
+/* ── تعليم العناصر ──────────────────────────────────────────────────── */
+[data-sec]{position:relative}
+[data-sec].rv-hot{outline:2px dashed var(--rv-blue);outline-offset:3px;
+  border-radius:6px}
+[data-sec].rv-flash{animation:rvflash 1.5s ease}
+@keyframes rvflash{0%,100%{background:transparent}30%{background:#fff7e6}}
+.rv-add{position:absolute;top:6px;inset-inline-start:-15px;z-index:60;
+  width:30px;height:30px;border-radius:50%;border:0;background:var(--rv-blue);
+  color:#fff;font:700 17px/1 sans-serif;cursor:pointer;display:none;
+  box-shadow:0 3px 12px rgba(35,82,255,.4)}
+[data-sec].rv-hot > .rv-add{display:block}
+.rv-badge{position:absolute;top:6px;inset-inline-end:8px;z-index:55;
+  background:var(--rv-amber);color:#3b2500;font:700 11.5px/1 sans-serif;
+  padding:5px 9px;border-radius:999px;cursor:pointer}
+.rv-badge.done{background:#dcfce7;color:#166534}
+[data-card]{position:relative;cursor:pointer}
+[data-card].rv-hot{outline:2px dashed var(--rv-blue);outline-offset:2px}
+
+
+/* ── المرساة الدقيقة ─────────────────────────────────────────────────── */
+mark.rv-mark{background:transparent;color:inherit;padding:0}
+mark.rv-mark.on{background:#fff3cd;box-shadow:0 0 0 2px #fff3cd;
+  border-radius:3px;cursor:pointer;position:relative}
+mark.rv-mark.on.done{background:#dcfce7;box-shadow:0 0 0 2px #dcfce7}
+mark.rv-mark.on:hover{background:var(--rv-amber)}
+mark.rv-mark.rv-flash{animation:rvflash 1.5s ease}
+
+[data-card] .rv-badge{top:4px;inset-inline-end:4px;padding:3px 8px;font-size:11px}
+[data-card].rv-flash{animation:rvflash 1.5s ease}
+
+.rv-c .loc b{color:var(--rv-blue);margin:0 3px}
+.rv-c.lost{border-color:#fecaca;background:#fffafa}
+.rv-c .warn{background:#fef2f2;color:#991b1b;font-size:11.5px;
+  padding:5px 8px;border-radius:7px;margin:5px 0}
+.rv-c.hit{border-color:var(--rv-blue);box-shadow:0 0 0 3px rgba(35,82,255,.16)}
+
+/* ── حالُ الاعتماد ───────────────────────────────────────────────────── */
+#rv-bar .st{font-size:11.5px;padding:5px 11px;border-radius:999px;
+  font-weight:600;white-space:nowrap}
+#rv-bar .st-review{background:#fef3c7;color:#92400e}
+#rv-bar .st-approved{background:#dcfce7;color:#166534}
+#rv-bar .st-changes{background:#fee2e2;color:#991b1b}
+#rv-bar button.ok{background:#16a34a}
+#rv-bar button.ok:hover{background:#15803d}
+#rv-bar button.fix{background:rgba(255,255,255,.14)}
+
+/* ── التقييم ─────────────────────────────────────────────────────────── */
+#rv-bar .avg{font-size:12px;opacity:.9;white-space:nowrap}
+#rv-bar button.rate{background:var(--rv-amber);color:#3b2500;font-weight:700}
+#rv-bar button.rate:hover{background:#e59a2e}
+
+#rv-rate-box{position:fixed;top:64px;inset-inline-start:calc(var(--rv-w) + 16px);
+  width:340px;z-index:9200;background:#fff;border:1px solid var(--rv-line);
+  border-radius:15px;padding:16px;display:none;
+  box-shadow:0 20px 56px rgba(26,40,74,.22);
+  font:14px/1.6 "Segoe UI","Noto Sans Arabic",sans-serif;
+  max-height:calc(100vh - 84px);overflow:auto}
+body.rv-collapsed #rv-rate-box{inset-inline-start:16px}
+#rv-rate-box.on{display:block}
+#rv-rate-box .hd{font-weight:700;color:var(--rv-navy);margin-bottom:10px}
+
+.scale{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
+.scale button{padding:9px 0;border:1px solid var(--rv-line);background:#fff;
+  color:var(--rv-mut);border-radius:8px;font:700 13px/1 inherit;cursor:pointer}
+.scale button:hover{border-color:var(--rv-amber)}
+.scale button.on{background:var(--rv-amber);border-color:var(--rv-amber);
+  color:#3b2500}
+.lbl{display:flex;justify-content:space-between;color:var(--rv-mut);
+  font-size:11px;margin:4px 2px 10px}
+
+#rv-note{width:100%;min-height:76px;border:1px solid var(--rv-line);
+  border-radius:9px;padding:9px;font:inherit;resize:vertical}
+#rv-note:focus{outline:2px solid var(--rv-blue);outline-offset:-1px}
+.pass{display:flex;gap:9px;align-items:flex-start;margin:11px 0;
+  background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;
+  padding:10px 12px;cursor:pointer;font-size:12.5px;line-height:1.5}
+.pass input{margin-top:3px;width:17px;height:17px;accent-color:#16a34a}
+#rv-rate-box .row{display:flex;gap:7px}
+#rv-rate-box .row button{flex:1;padding:10px;border:0;border-radius:9px;
+  background:#16a34a;color:#fff;font:600 13px/1 inherit;cursor:pointer}
+#rv-rate-box .row button.g{background:#f1f5f9;color:var(--rv-mut)}
+
+.others{margin-top:14px;border-top:1px solid var(--rv-line);padding-top:11px}
+.hd2{font-size:12px;color:var(--rv-mut);margin-bottom:8px}
+.others .v{border:1px solid var(--rv-line);border-radius:10px;padding:9px 11px;
+  margin-bottom:7px;font-size:12.5px}
+.others .nm{font-weight:700;color:var(--rv-navy)}
+.others .sc{background:#f1f5f9;border-radius:6px;padding:2px 8px;
+  margin-inline-start:6px;font-weight:700;font-size:11.5px}
+.others .pz{font-size:11px;padding:2px 8px;border-radius:999px;
+  margin-inline-start:5px}
+.others .pz.y{background:#dcfce7;color:#166534}
+.others .pz.n{background:#fee2e2;color:#991b1b}
+.others .nt{color:#475569;margin-top:5px;white-space:pre-wrap}
