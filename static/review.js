@@ -28,7 +28,8 @@
     h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h).toString(36); };
   const norm = s => (s || "").replace(/\s+/g, " ").trim();
 
-  const KINDS = { chart: "رسم", cards: "بطاقات", text: "نصّ", divider: "فاصل" };
+  const KINDS = { chart: "رسم", cards: "بطاقات", text: "نصّ",
+                  divider: "فاصل", sources: "مصادر", table: "جدول" };
 
   /* نصُّ العنصر بلا ما حقنّاه فيه — فزرّ «+» والشارة يدخلان في `textContent`
      ويتسرّبان إلى وسم التعليق المحفوظ. تُنسخ العقدة ويُنزع منها ما لنا. */
