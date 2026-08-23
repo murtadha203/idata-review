@@ -29,7 +29,8 @@
   const norm = s => (s || "").replace(/\s+/g, " ").trim();
 
   const KINDS = { chart: "رسم", cards: "بطاقات", text: "نصّ",
-                  divider: "فاصل", sources: "مصادر", table: "جدول" };
+                  divider: "فاصل", sources: "مصادر", table: "جدول",
+                  title: "عنوان اللوحة", description: "وصف اللوحة" };
 
   /* نصُّ العنصر بلا ما حقنّاه فيه — فزرّ «+» والشارة يدخلان في `textContent`
      ويتسرّبان إلى وسم التعليق المحفوظ. تُنسخ العقدة ويُنزع منها ما لنا. */
