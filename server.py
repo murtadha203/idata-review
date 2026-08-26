@@ -189,19 +189,25 @@ def init():
             c.execute(f"ALTER TABLE {t} ADD COLUMN manual "
                       f"INTEGER NOT NULL DEFAULT 0")
 
-    have = {r["name"]: r["id"] for r in c.execute("SELECT id, name FROM users")}
-    want = {t[1]: t for t in TEAM}
+    have = {(r["username"] or "").lower(): r["id"]
+            for r in c.execute("SELECT id, username FROM users")}
+    want = {t[0].lower() for t in TEAM}
     for un, name, role, _mail, gen in TEAM:
-        if name in have:
-            c.execute("UPDATE users SET username=?, role=?, gender=? WHERE id=?",
-                      (un, role, gen, have[name]))
+        k = un.lower()
+        if k in have:
+            c.execute("UPDATE users SET username=?, name=?, role=?, gender=? "
+                      "WHERE id=?", (un, name, role, gen, have[k]))
         else:
             c.execute("INSERT INTO users (username, name, role, gender) "
                       "VALUES (?,?,?,?)", (un, name, role, gen))
     # من خرج من السجلّ: يُحذف هو وما كتبه — ولا يُنسب عملُه إلى غيره.
-    for name, uid in have.items():
-        if name not in want:
-            c.execute("DELETE FROM verdicts WHERE reviewer_id=?", (uid,))
+    # **ويُعرف بخروج اسم دخوله**، فتغييرُ الاسم المعروض لا يمسّ شيئاً.
+    for k, uid in have.items():
+        if k not in want:
+            for t in ("section_views", "views", "verdicts"):
+                c.execute(f"DELETE FROM {t} WHERE "
+                          f"{'reviewer_id' if t == 'verdicts' else 'user_id'}=?",
+                          (uid,))
             c.execute("DELETE FROM comments WHERE author_id=?", (uid,))
             c.execute("DELETE FROM users WHERE id=?", (uid,))
     c.commit()
