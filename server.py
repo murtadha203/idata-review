@@ -663,6 +663,72 @@ class H(BaseHTTPRequestHandler):
             c.close()
             return self.redirect(f"/d/{urllib.parse.quote(slug)}")
 
+        # ── تحديثُ لوحةٍ قائمة ───────────────────────────────────────────
+        # **ولماذا مسارٌ غيرُ `/add`.** كان التحديثُ يمرّ بنموذج الرفع: يعود
+        # الرافعُ إلى `/new` ويكتب العنوانَ **حرفاً بحرف** ليخرج الـslug
+        # نفسُه، ويختار التصنيفَ من جديد. وخطأُ حرفٍ واحدٍ في العنوان يصنع
+        # لوحةً ثانيةً بدل أن يحدّث الأولى، **وتبقى التعليقاتُ على الأولى**
+        # فتبدو ضائعة. فالتحديثُ يأخذ الـslug صريحاً ولا يشتقّه من عنوان.
+        #
+        # **والتعليقاتُ لا تُمسّ.** هي مرتبطةٌ بـ`dashboard_id` والصفُّ يُحدَّث
+        # ولا يُستبدل، فتبقى كما هي. وما قد يفقد موضعَه هو مرساتُها داخل
+        # الصفحة (`sec_key` مشتقٌّ من نوع القسم وعنوانه)، وذلك يعرضه
+        # `review.js` صراحةً «القسم لم يعد موجوداً» ولا يخمّن بديلاً.
+        if path == "/replace":
+            if u["role"] != "uploader":
+                return self.json({"error": "forbidden"}, 403)
+            ctype = self.headers.get("Content-Type") or ""
+            n = int(self.headers.get("Content-Length") or 0)
+            if "multipart/form-data" not in ctype:
+                return self.json({"error": "أرسل الملفّ من النموذج."}, 400)
+            bnd = re.search(r"boundary=([^;]+)", ctype)
+            raw = parse_multipart(self.rfile.read(n),
+                                  bnd.group(1).strip('"').encode())
+            fields = {k: (v[1].decode("utf-8", "replace") if v[0] is None else v)
+                      for k, v in raw.items()}
+            slug = (fields.get("slug") or "").strip()
+            up = fields.get("file")
+            c = db()
+            d = c.execute("SELECT * FROM dashboards WHERE slug=?",
+                          (slug,)).fetchone()
+            try:
+                if not d:
+                    raise RuntimeError("لا لوحةَ بهذا المعرّف.")
+                if not (isinstance(up, tuple) and up[0] and up[1]):
+                    raise RuntimeError("لم يصل ملفّ.")
+                if b"<" not in up[1][:2000]:
+                    raise RuntimeError("الملفّ لا يبدو صفحة HTML.")
+                page, moved = split_libs(up[1].decode("utf-8", "replace"))
+            except Exception as e:
+                c.close()
+                return self.json({"error": str(e)[-300:]}, 400)
+
+            # **ولا يُكتب فوق الملفّ إلّا بعد أن يُقرأ الجديدُ كلُّه.** كتابةٌ
+            # تفشل في منتصفها تترك اللوحةَ بلا صفحة، والتعليقاتُ عليها.
+            with open(os.path.join(DASH_DIR, slug + ".html"), "w",
+                      encoding="utf-8") as f:
+                f.write(page)
+
+            # الحالةُ تعود إلى المراجعة والتقييماتُ تُمسح: **المُجاز هو النسخة
+            # التي رآها المراجع لا أيّ نسخةٍ بعدها** — وهي قاعدةُ `/add` نفسُها.
+            c.execute("""UPDATE dashboards SET status='review', updated_at=?,
+                          decided_by=NULL, decided_at=NULL WHERE id=?""",
+                      (now(), d["id"]))
+            c.execute("DELETE FROM verdicts WHERE dashboard_id=?", (d["id"],))
+
+            # وكم تعليقاً فقد مرساتَه؟ يُحسب بمقارنة `sec_key` بما في الصفحة
+            # الجديدة، **ويُقال للرافع صراحةً** بدل أن يكتشفه بالتصفّح.
+            keys = set(re.findall(r'data-sec="([^"]+)"', page))
+            rows = c.execute("""SELECT sec_key, COUNT(*) n FROM comments
+                                WHERE dashboard_id=? GROUP BY sec_key""",
+                             (d["id"],)).fetchall()
+            kept = sum(r["n"] for r in rows if r["sec_key"] in keys)
+            lost = sum(r["n"] for r in rows if r["sec_key"] not in keys)
+            c.commit()
+            c.close()
+            return self.json({"ok": True, "slug": slug,
+                              "kept": kept, "lost": lost, "libs": moved})
+
         if path == "/api/comments":
             b = self.body_json()
             if b is None:

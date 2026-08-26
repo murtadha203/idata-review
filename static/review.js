@@ -52,15 +52,21 @@
                  changes: "تحتاج تعديلاً" };
     /* التقييم للمراجع وحده — والرافع يرى النتيجة ولا يضعها. */
     const canRate = RV.me.role === "reviewer";
+    /* والتحديثُ للرافع وحده — والمراجعُ يعلّق ولا يبدّل الصفحة. */
+    const canPush = RV.me.role === "uploader";
     bar.innerHTML = `<a href="/">← اللوحات</a>` +
       `<span class="t">${esc(document.title.replace(/^معاينة — /, ""))}</span>` +
       `<span class="st st-${esc(RV.status)}" id="rv-st">` +
       `${esc(ST[RV.status] || RV.status)}</span>` +
       `<span class="avg" id="rv-avg"></span>` +
       (canRate ? `<button id="rv-rate" class="rate">تقييمي</button>` : "") +
+      (canPush ? `<button id="rv-push" class="push">تحديث الملفّ</button>` +
+                 `<input type="file" id="rv-file" accept=".html,.htm"` +
+                 ` hidden>` : "") +
       `<span class="me">${esc(RV.me.name)}</span>` +
       `<button id="rv-toggle">إخفاء اللوح</button>`;
     document.body.appendChild(bar);
+    if (canPush) wirePush();
 
     const p = el("div"); p.id = "rv-panel";
     p.innerHTML = `<header><span class="n">التعليقات</span>
@@ -258,6 +264,51 @@
     if (!r.ok) return alert("تعذّر الحفظ");
     all.push(await r.json());
     closeEditor(); render();
+  }
+
+  // ═══ تحديثُ ملفّ اللوحة ═══════════════════════════════════════════════
+  /* **يستبدل الصفحة ولا يُنشئ لوحة.** كان الرافع يعود إلى «رفع لوحة» ويكتب
+     العنوان حرفاً بحرف ليصادف المعرّفَ نفسَه — وخطأُ حرفٍ يصنع لوحةً ثانية
+     وتبقى التعليقاتُ على الأولى فتبدو ضائعة. وهنا يُرسل المعرّفُ صريحاً.
+
+     **والتعليقاتُ تبقى، وما فقد مرساتَه يُقال عدده.** لا يُخفى ولا يُخمَّن
+     له بديل: الصفحةُ الجديدة قد لا تحمل قسماً كان يحمل تعليقاً، فيُعلَن. */
+  function wirePush() {
+    const btn = $("#rv-push"), inp = $("#rv-file");
+    btn.onclick = () => inp.click();
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      if (!confirm(`استبدالُ صفحة هذه اللوحة بـ«${f.name}»؟
+
+` +
+                   `التعليقاتُ تبقى، وتعود اللوحةُ إلى «قيد المراجعة» ` +
+                   `وتُمسح التقييمات.`)) { inp.value = ""; return; }
+      const was = btn.textContent;
+      btn.disabled = true; btn.textContent = "جارٍ الرفع…";
+      try {
+        const fd = new FormData();
+        fd.append("slug", RV.slug);
+        fd.append("file", f, f.name);
+        const r = await fetch("/replace", { method: "POST", body: fd });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) throw new Error(j.error || "تعذّر الرفع");
+        alert(`حُدِّثت الصفحة.
+
+` +
+              `تعليقاتٌ بقيت في مواضعها: ${j.kept}
+` +
+              (j.lost ? `تعليقاتٌ فقدت موضعها: ${j.lost} — ` +
+                        `تظهر في اللوح موسومةً «القسم لم يعد موجوداً»
+` : "") +
+              `
+وعادت اللوحةُ إلى «قيد المراجعة».`);
+        location.reload();
+      } catch (e) {
+        alert("لم يُحدَّث الملفّ: " + e.message);
+        btn.disabled = false; btn.textContent = was; inp.value = "";
+      }
+    };
   }
 
   // ═══ إيجاد الهدف من المرساة ══════════════════════════════════════════════

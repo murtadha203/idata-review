@@ -130,6 +130,9 @@ mark.rv-mark.rv-flash{animation:rvflash 1.5s ease}
 #rv-bar .avg{font-size:12px;opacity:.9;white-space:nowrap}
 #rv-bar button.rate{background:var(--rv-amber);color:#3b2500;font-weight:700}
 #rv-bar button.rate:hover{background:#e59a2e}
+#rv-bar button.push{background:#0e7c86;color:#fff;font-weight:700}
+#rv-bar button.push:hover{background:#0a616a}
+#rv-bar button.push:disabled{background:#8fb6ba;cursor:default}
 
 #rv-rate-box{position:fixed;top:64px;inset-inline-start:calc(var(--rv-w) + 16px);
   width:340px;z-index:9200;background:#fff;border:1px solid var(--rv-line);
