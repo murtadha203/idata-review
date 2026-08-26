@@ -46,7 +46,8 @@ SCHEMA = """
 -- شاشة الدخول** — والتعامل في كلّ ما عداها بالاسم العربيّ حصراً.
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL COLLATE NOCASE,
-  name TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('uploader','reviewer')));
+  name TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('uploader','reviewer')),
+  gender TEXT NOT NULL DEFAULT 'm' CHECK (gender IN ('m','f')));
 
 CREATE TABLE IF NOT EXISTS dashboards (
   id INTEGER PRIMARY KEY, slug TEXT UNIQUE NOT NULL,
@@ -138,14 +139,16 @@ def load_team():
     if raw:
         try:
             return [(t["username"], t["name"], t["role"],
-                     (t.get("email") or "").strip())
+                     (t.get("email") or "").strip(),
+                     "f" if (t.get("gender") or "m").lower().startswith("f")
+                     else "m")
                     for t in json.loads(raw)]
         except (ValueError, KeyError) as e:
             sys.exit(f"سجلّ الفريق غير سليم: {e}")
     # سجلٌّ تجريبيّ — أسماؤه عشوائية، فلا يُستعمل بالخطأ في الإنتاج.
     print("⚠ لا سجلّ فريق — أُنشئ سجلٌّ تجريبيّ. أنشئ config/team.json.")
     return [(f"demo_{secrets.randbelow(9000) + 1000}", "مستخدم تجريبيّ",
-             "uploader", "")]
+             "uploader", "", "m")]
 
 
 TEAM = load_team()
@@ -175,6 +178,11 @@ def init():
         c.execute("ALTER TABLE users RENAME COLUMN code TO username")
 
     # وقواعدُ أُنشئت قبل عمود `manual` تُكمَّل بلا فقدِ صفّ
+    ucols2 = {r["name"] for r in c.execute("PRAGMA table_info(users)")}
+    if ucols2 and "gender" not in ucols2:
+        c.execute("ALTER TABLE users ADD COLUMN gender TEXT NOT NULL "
+                  "DEFAULT 'm'")
+
     for t in ("views", "section_views"):
         cols = {r["name"] for r in c.execute(f"PRAGMA table_info({t})")}
         if cols and "manual" not in cols:
@@ -183,13 +191,13 @@ def init():
 
     have = {r["name"]: r["id"] for r in c.execute("SELECT id, name FROM users")}
     want = {t[1]: t for t in TEAM}
-    for un, name, role, _mail in TEAM:
+    for un, name, role, _mail, gen in TEAM:
         if name in have:
-            c.execute("UPDATE users SET username=?, role=? WHERE id=?",
-                      (un, role, have[name]))
+            c.execute("UPDATE users SET username=?, role=?, gender=? WHERE id=?",
+                      (un, role, gen, have[name]))
         else:
-            c.execute("INSERT INTO users (username, name, role) VALUES (?,?,?)",
-                      (un, name, role))
+            c.execute("INSERT INTO users (username, name, role, gender) "
+                      "VALUES (?,?,?,?)", (un, name, role, gen))
     # من خرج من السجلّ: يُحذف هو وما كتبه — ولا يُنسب عملُه إلى غيره.
     for name, uid in have.items():
         if name not in want:

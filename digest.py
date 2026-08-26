@@ -76,8 +76,9 @@ def collect(db_path, dash_dir):
     c.row_factory = sqlite3.Row
     dashes = c.execute("""SELECT id, slug, title FROM dashboards
                           WHERE status='review' ORDER BY updated_at""").fetchall()
-    revs = c.execute("""SELECT id, name FROM users WHERE role='reviewer'
-                        ORDER BY name""").fetchall()
+    revs = c.execute("""SELECT id, name,
+                          COALESCE(gender,'m') AS gender FROM users
+                        WHERE role='reviewer' ORDER BY name""").fetchall()
     total = {d["id"]: _sections(dash_dir, d["slug"]) for d in dashes}
 
     out = []
@@ -102,7 +103,8 @@ def collect(db_path, dash_dir):
             elif tot and seen < tot:
                 partial.append(item)
         if never or quick or partial:
-            out.append({"id": r["id"], "name": r["name"], "never": never,
+            out.append({"id": r["id"], "name": r["name"],
+                        "fem": r["gender"] == "f", "never": never,
                         "quick": quick, "partial": partial})
     c.close()
     return out
@@ -130,25 +132,45 @@ def _pro(n, one, two, many):
     return one if n == 1 else two if n == 2 else many
 
 
+def _v(fem, m, f):
+    """صيغةُ الفعل بحسب المخاطَب."""
+    return f if fem else m
+
+
+def _heads(who):
+    """عناوينُ الكتل الثلاث، مصرَّفةً للمخاطَب وللعدد."""
+    fem = who.get("fem")
+    out = {}
+    if who["never"]:
+        n = len(who["never"])
+        out["never"] = (f"{_count(n)} لم "
+                        f"{_v(fem, 'تفتح', 'تفتحي')}"
+                        f"{_pro(n, 'ه', 'هما', 'ها')} بعد:")
+    if who["quick"]:
+        n = len(who["quick"])
+        out["quick"] = (f"{_count(n)} لم {_v(fem, 'تمكث', 'تمكثي')} "
+                        f"في{_pro(n, 'ه', 'هما', 'ها')} إلّا قليلاً:")
+    if who["partial"]:
+        n = len(who["partial"])
+        p = _pro(n, "ه", "هما", "ها")
+        out["partial"] = (f"{_count(n)} {_v(fem, 'بلغتَ', 'بلغتِ')} "
+                          f"بعض{p} ولم {_v(fem, 'تُكمل', 'تُكملي')}{p}:")
+    return out
+
+
 def body(who, base_url):
     """نصُّ الرسالة. **بلا لومٍ وبلا تلطيفٍ يُخفي الرقم.**"""
     L = [f"أهلاً {who['name']}،", "",
          "هذه رسالة تلقائية بشأن مراجعة لوحات اي داتا.", ""]
+    H = _heads(who)
     if who["never"]:
-        n = len(who["never"])
-        L += [f"{_count(n)} لم تفتح{_pro(n, 'ه', 'هما', 'ها')} بعد:"]
-        L += [f"  · {d['title']}" for d in who["never"]] + [""]
+        L += [H["never"]] + [f"  · {d['title']}" for d in who["never"]] + [""]
     if who["quick"]:
-        n = len(who["quick"])
-        L += [f"{_count(n)} لم تمكث في{_pro(n, 'ه', 'هما', 'ها')} "
-              f"إلّا قليلاً:"]
-        L += [f"  · {d['title']} — {_mins(d['ms'])}" for d in who["quick"]] + [""]
+        L += [H["quick"]] + [f"  · {d['title']} — {_mins(d['ms'])}"
+                             for d in who["quick"]] + [""]
     if who["partial"]:
-        n = len(who["partial"])
-        L += [f"{_count(n)} بلغتَ بعض{_pro(n, 'ه', 'هما', 'ها')} "
-              f"ولم تُكمل{_pro(n, 'ه', 'هما', 'ها')}:"]
-        L += [f"  · {d['title']} — {d['seen']} قسماً من {d['total']}"
-              for d in who["partial"]] + [""]
+        L += [H["partial"]] + [f"  · {d['title']} — {d['seen']} قسماً "
+                               f"من {d['total']}" for d in who["partial"]] + [""]
     L += [f"الداشبوردات هنا: {base_url}"]
     return "\n".join(L)
 
@@ -183,20 +205,14 @@ def body_html(who, base_url):
             out.append("<li>" + _link(d, base_url) + tail(d) + "</li>")
         out.append(UL[1])
 
+    H = _heads(who)
     if who["never"]:
-        n = len(who["never"])
-        block(who["never"],
-              f"{_count(n)} لم تفتح{_pro(n, 'ه', 'هما', 'ها')} بعد:")
+        block(who["never"], H["never"])
     if who["quick"]:
-        n = len(who["quick"])
-        block(who["quick"],
-              f"{_count(n)} لم تمكث في{_pro(n, 'ه', 'هما', 'ها')} إلّا قليلاً:",
+        block(who["quick"], H["quick"],
               lambda d: f' <span style="color:#6b7280">— {_mins(d["ms"])}</span>')
     if who["partial"]:
-        n = len(who["partial"])
-        block(who["partial"],
-              f"{_count(n)} بلغتَ بعض{_pro(n, 'ه', 'هما', 'ها')} "
-              f"ولم تُكمل{_pro(n, 'ه', 'هما', 'ها')}:",
+        block(who["partial"], H["partial"],
               lambda d: f' <span style="color:#6b7280">— '
                         f'{d["seen"]} قسماً من {d["total"]}</span>')
 
