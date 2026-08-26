@@ -135,6 +135,10 @@ mark.rv-mark.rv-flash{animation:rvflash 1.5s ease}
 #rv-bar button.push:disabled{background:#8fb6ba;cursor:default}
 #rv-bar button.prog{background:#3d4f77;color:#fff;font-weight:700}
 #rv-bar button.prog:hover{background:#31405f}
+#rv-bar button.del{background:transparent;color:#fca5a5;font-weight:600;
+  border:1px solid rgba(252,165,165,.45)}
+#rv-bar button.del:hover{background:#b91c1c;color:#fff;border-color:#b91c1c}
+#rv-bar button.del:disabled{opacity:.5;cursor:default}
 #rv-bar .mine{font-size:12px;opacity:.8;white-space:nowrap}
 
 /* لوحُ المتابعة — يُفتح فوق الصفحة ولا يزحزحها */
@@ -163,10 +167,6 @@ body.rv-collapsed #rv-prog-box{inset-inline-start:16px}
 #rv-prog-box td.dim,#rv-prog-box .dim{color:#9ca3af;font-size:12px}
 #rv-prog-box .man{font-size:10.5px;background:#fde68a;color:#78350f;
   border-radius:4px;padding:1px 5px;margin-inline-start:5px}
-#rv-prog-box button.ed{font-size:11px;background:none;border:1px solid var(--rv-line);
-  border-radius:5px;padding:1px 7px;margin-inline-start:6px;cursor:pointer;
-  color:#4b5563}
-#rv-prog-box button.ed:hover{background:#f3f4f6}
 #rv-prog-box .fine{margin:10px 16px 0;font-size:12px;line-height:1.75;
   color:#4b5563}
 #rv-prog-box .ld{padding:22px 16px;color:#6b7280}

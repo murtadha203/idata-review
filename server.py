@@ -901,67 +901,37 @@ class H(BaseHTTPRequestHandler):
             c.close()
             return self.json({"ok": True})
 
-        # ── إدخالٌ يدويّ للمتابعة ────────────────────────────────────────
-        # **ولماذا يلزم.** بدأ التسجيلُ متأخّراً عن القراءة، فمن قرأ قبل
-        # النشر يظهر كأنّه لم يفتح. والرافعُ يعرف ما لا يعرفه الجدول.
-        #
-        # **ويُوسَم `manual` ولا يُخلط.** رقمٌ أُدخل عن ظنٍّ صادقٍ يبقى ظنّاً،
-        # ولو اختلط بالمقيس لم يبقَ في الجدول ما يُوثق به. فيُفصل ويُعلَن.
-        if path == "/api/progress/set":
+        if path == "/api/delete":
             if u["role"] != "uploader":
                 return self.json({"error": "forbidden"}, 403)
             b = self.body_json() or {}
             slug = (b.get("slug") or "").strip()
-            try:
-                uid = int(b.get("user_id"))
-                seen = max(0, int(b.get("seen") or 0))
-                mins = max(0, float(b.get("mins") or 0))
-            except (TypeError, ValueError):
-                return self.json({"error": "قيمٌ غير صالحة"}, 400)
-
             c = db()
-            d = c.execute("SELECT id FROM dashboards WHERE slug=?",
+            d = c.execute("SELECT * FROM dashboards WHERE slug=?",
                           (slug,)).fetchone()
-            who = c.execute("SELECT id FROM users WHERE id=? AND role='reviewer'",
-                            (uid,)).fetchone()
-            if not d or not who:
+            if not d:
                 c.close()
-                return self.json({"error": "لا لوحةَ أو لا مراجع"}, 404)
-            did, t = d["id"], now()
+                return self.json({"error": "لا لوحةَ بهذا المعرّف."}, 404)
+            if (b.get("confirm") or "").strip() != (d["title"] or "").strip():
+                c.close()
+                return self.json({"error": "العنوانُ لا يطابق."}, 400)
 
-            # مفاتيحُ الأقسام من الصفحة نفسِها، فالصفوفُ تشير إلى مواضعَ حقيقية
-            try:
-                with open(os.path.join(DASH_DIR, slug + ".html"),
-                          encoding="utf-8") as fh:
-                    keys = list(dict.fromkeys(
-                        re.findall(r'data-sec="([^"]+)"', fh.read())))
-            except OSError:
-                keys = []
-            seen = min(seen, len(keys)) if keys else seen
-
-            # **ولا يُمسّ المقيس.** يُحذف المُدخَلُ يدوياً وحدَه ثمّ يُعاد،
-            # فلا يمحو تعديلٌ يدويٌّ قراءةً حقيقيةً سُجّلت بينهما.
-            c.execute("""DELETE FROM section_views WHERE dashboard_id=?
-                         AND user_id=? AND manual=1""", (did, uid))
-            per = int(mins * 60000 / seen) if seen else 0
-            for k in keys[:seen]:
-                c.execute("""INSERT INTO section_views (dashboard_id,user_id,
-                              sec_key,seen_at,ms,manual) VALUES (?,?,?,?,?,1)
-                             ON CONFLICT(dashboard_id,user_id,sec_key)
-                             DO UPDATE SET ms=excluded.ms, manual=1""",
-                          (did, uid, k, t, per))
-            if seen or mins:
-                c.execute("""INSERT INTO views (dashboard_id,user_id,opens,
-                              first_at,last_at,manual) VALUES (?,?,1,?,?,1)
-                             ON CONFLICT(dashboard_id,user_id) DO UPDATE SET
-                              opens=MAX(opens,1), manual=1""",
-                          (did, uid, t, t))
-            else:
-                c.execute("""DELETE FROM views WHERE dashboard_id=? AND
-                             user_id=? AND manual=1""", (did, uid))
+            did = d["id"]
+            n = {t: c.execute(f"SELECT COUNT(*) n FROM {t} WHERE dashboard_id=?",
+                              (did,)).fetchone()["n"]
+                 for t in ("comments", "verdicts", "views", "section_views")}
+            for t in ("section_views", "views", "verdicts", "comments"):
+                c.execute(f"DELETE FROM {t} WHERE dashboard_id=?", (did,))
+            c.execute("DELETE FROM dashboards WHERE id=?", (did,))
             c.commit()
             c.close()
-            return self.json({"ok": True, "seen": seen})
+            # **والملفُّ يُحذف بعد السجلّ.** لو سقط الحذفُ بينهما بقي ملفٌّ
+            # يتيمٌ لا يضرّ، وأمّا العكسُ فصفحةٌ في القائمة بلا ملفّ.
+            try:
+                os.remove(os.path.join(DASH_DIR, slug + ".html"))
+            except OSError:
+                pass
+            return self.json({"ok": True, "title": d["title"], **n})
 
         if path == "/api/comments":
             b = self.body_json()

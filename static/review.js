@@ -63,7 +63,9 @@
       (canPush ? `<button id="rv-push" class="push">تحديث الملفّ</button>` +
                  `<input type="file" id="rv-file" accept=".html,.htm"` +
                  ` hidden>` +
-                 `<button id="rv-prog" class="prog">المتابعة</button>` : "") +
+                 `<button id="rv-prog" class="prog">المتابعة</button>` +
+                 `<button id="rv-del" class="del" title="حذفٌ لا يُسترجَع">`
+                 + `حذف</button>` : "") +
       /* **ولا يُقاس أحدٌ في الظلام.** المراجعُ يرى تقدّمَه كما يراه الرافع.
          وإخفاؤه يشتري رقماً صادقاً اليوم وثقةً مكسورةً حين يُكتشف. */
       (canRate ? `<span class="mine" id="rv-mine" title="يراه الرافعُ أيضاً">`
@@ -71,7 +73,7 @@
       `<span class="me">${esc(RV.me.name)}</span>` +
       `<button id="rv-toggle">إخفاء اللوح</button>`;
     document.body.appendChild(bar);
-    if (canPush) wirePush();
+    if (canPush) { wirePush(); wireDelete(); }
 
     const p = el("div"); p.id = "rv-panel";
     p.innerHTML = `<header><span class="n">التعليقات</span>
@@ -374,6 +376,50 @@
     addEventListener("pagehide", () => trackFlush(true));
   }
 
+  // ═══ حذفُ الداشبورد ═══════════════════════════════════════════════════
+  /* **ولا يُحذف بنقرةٍ وتأكيد.** «هل أنت متأكّد؟» تُنقر «نعم» بلا قراءة،
+     لأنّها تُنقر عشرَ مرّاتٍ في اليوم لغير هذا. فيُكتب العنوانُ حرفاً بحرف:
+     تأكيدٌ لا يقع سهواً، ويُجبر الحاذفَ على قراءة اسم ما يحذف.
+
+     ويُقال له أوّلاً كم تعليقاً سيذهب معه — فالثمنُ يُعرَض قبل الدفع. */
+  function wireDelete() {
+    $("#rv-del").onclick = async () => {
+      let n = 0;
+      try {
+        const cs = await (await fetch(
+          `${API}?d=${encodeURIComponent(RV.slug)}`)).json();
+        n = (cs || []).length;
+      } catch (e) { /* العددُ تحسينٌ لا شرط */ }
+      const title = document.title.replace(/^معاينة — /, "").trim();
+      const warn = "حذفٌ لا يُسترجَع.\n\n"
+        + (n ? `سيُحذف معه ${n} تعليقاً، ` : "سيُحذف معه ")
+        + "وكلُّ التقييمات وبيانات المتابعة.\n\n"
+        + `اكتب عنوان الداشبورد حرفاً بحرف للتأكيد:\n${title}`;
+      const typed = prompt(warn, "");
+      if (typed === null) return;
+      if (typed.trim() !== title) {
+        alert("العنوانُ لا يطابق — لم يُحذف شيء.");
+        return;
+      }
+      const b = $("#rv-del");
+      b.disabled = true; b.textContent = "جارٍ الحذف…";
+      try {
+        const r = await fetch("/api/delete", { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slug: RV.slug, confirm: typed.trim() }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) throw new Error(j.error || "تعذّر الحذف");
+        alert(`حُذف «${j.title}».\n\n`
+          + `تعليقات: ${j.comments} · تقييمات: ${j.verdicts} · `
+          + `متابعة: ${j.views}`);
+        location.href = "/";
+      } catch (e) {
+        alert("لم يُحذف: " + e.message);
+        b.disabled = false; b.textContent = "حذف";
+      }
+    };
+  }
+
   // ═══ عرضُ المتابعة ════════════════════════════════════════════════════
   const fmt = ms => {
     const s = Math.round(ms / 1000);
@@ -416,17 +462,15 @@
           `/api/progress?d=${encodeURIComponent(RV.slug)}`)).json();
       } catch (e) { box.innerHTML = '<div class="ld">تعذّرت القراءة.</div>'; return; }
 
-      const edit = w => `<button class="ed" data-u="${w.id}" `
-        + `data-s="${w.seen || 0}" title="إدخالٌ يدويّ">تعديل</button>`;
       const rows = (j.who || []).map(w => {
         const tag = w.manual ? ' <span class="man">يدويّ</span>' : "";
         if (!w.opens) {
-          return `<tr class="none"><td>${esc(w.name)}${edit(w)}</td>
+          return `<tr class="none"><td>${esc(w.name)}</td>
             <td colspan="3">لم يفتحها بعد</td></tr>`;
         }
         const pct = j.total ? Math.round(w.seen / j.total * 100) : 0;
         return `<tr>
-          <td>${esc(w.name)}${tag}${edit(w)}</td>
+          <td>${esc(w.name)}${tag}</td>
           <td><b>${w.seen}</b> من ${j.total}
               <span class="pc">${pct}%</span>
               <div class="bar"><i style="width:${pct}%"></i></div></td>
@@ -446,32 +490,9 @@
           يُحتسب تبويبٌ متروكٌ مفتوحاً. ومن يمرّر سريعاً يظهر بلوغاً عالياً
           وزمناً معدوماً — وذاك خبرٌ في نفسه.</p>
         <p class="fine dim">والمراجعون يرون تقدُّمَهم في شريطهم.
-          و<b>«يدويّ»</b> يعني رقماً أدخلتَه أنت لا قِسناه — يُفصل عن المقيس
-          عمداً، فما أُدخل عن ظنٍّ يبقى ظنّاً.</p>`;
+          و<b>«يدويّ»</b> رقمٌ أُدخل بيدٍ قبل أن يبدأ القياس، لا رقمٌ
+          قِسناه — ويبقى موسوماً كي لا يُقرأ مقيساً.</p>`;
       $("#rv-prog-x").onclick = () => { box.style.display = "none"; };
-      box.querySelectorAll("button.ed").forEach(b => {
-        b.onclick = async () => {
-          const cur = b.dataset.s;
-          const seen = prompt(
-            `كم قسماً بلغ من ${j.total}؟ (صفرٌ يمحو الإدخال اليدويّ)`, cur);
-          if (seen === null) return;
-          const mins = prompt("وكم دقيقةً تقديراً؟ (اتركها فارغةً إن لم تعرف)", "");
-          if (mins === null) return;
-          b.disabled = true;
-          try {
-            const r = await fetch("/api/progress/set", { method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ slug: RV.slug, user_id: +b.dataset.u,
-                                     seen: +seen || 0, mins: +mins || 0 }) });
-            const jj = await r.json().catch(() => ({}));
-            if (!r.ok || jj.error) throw new Error(jj.error || "تعذّر الحفظ");
-            btn.onclick(); btn.onclick();      // أُغلق ثمّ أُفتح فيُعاد التحميل
-          } catch (e) {
-            alert("لم يُحفظ: " + e.message);
-            b.disabled = false;
-          }
-        };
-      });
     };
   }
 
