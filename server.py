@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS views (
   dashboard_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
   opens INTEGER NOT NULL DEFAULT 0,
   first_at TEXT NOT NULL, last_at TEXT NOT NULL,
+  -- **والمُدخَلُ بيدٍ يُوسَم.** رقمٌ أدخلَه الرافعُ عن ظنٍّ صادقٍ يبقى ظنّاً،
+  -- وخلطُه بالمقيس يُفقد الجدولَ معناه كلَّه. فيُفصل ويُعلَن في اللوح.
+  manual INTEGER NOT NULL DEFAULT 0,
   UNIQUE (dashboard_id, user_id),
   FOREIGN KEY (dashboard_id) REFERENCES dashboards(id),
   FOREIGN KEY (user_id) REFERENCES users(id));
@@ -101,6 +104,7 @@ CREATE TABLE IF NOT EXISTS section_views (
   dashboard_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
   sec_key TEXT NOT NULL, seen_at TEXT NOT NULL,
   ms INTEGER NOT NULL DEFAULT 0,
+  manual INTEGER NOT NULL DEFAULT 0,
   UNIQUE (dashboard_id, user_id, sec_key),
   FOREIGN KEY (dashboard_id) REFERENCES dashboards(id),
   FOREIGN KEY (user_id) REFERENCES users(id));
@@ -169,6 +173,13 @@ def init():
     ucols = {r["name"] for r in c.execute("PRAGMA table_info(users)")}
     if "code" in ucols and "username" not in ucols:
         c.execute("ALTER TABLE users RENAME COLUMN code TO username")
+
+    # وقواعدُ أُنشئت قبل عمود `manual` تُكمَّل بلا فقدِ صفّ
+    for t in ("views", "section_views"):
+        cols = {r["name"] for r in c.execute(f"PRAGMA table_info({t})")}
+        if cols and "manual" not in cols:
+            c.execute(f"ALTER TABLE {t} ADD COLUMN manual "
+                      f"INTEGER NOT NULL DEFAULT 0")
 
     have = {r["name"]: r["id"] for r in c.execute("SELECT id, name FROM users")}
     want = {t[1]: t for t in TEAM}
@@ -638,7 +649,7 @@ class H(BaseHTTPRequestHandler):
             mine_only = u["role"] != "uploader"
             rows = c.execute("""
               SELECT us.id, us.name, us.role,
-                     v.opens, v.first_at, v.last_at,
+                     v.opens, v.first_at, v.last_at, v.manual,
                      (SELECT COUNT(*) FROM section_views sv
                        WHERE sv.dashboard_id=? AND sv.user_id=us.id) AS seen,
                      (SELECT COALESCE(SUM(ms),0) FROM section_views sv
@@ -889,6 +900,68 @@ class H(BaseHTTPRequestHandler):
             c.commit()
             c.close()
             return self.json({"ok": True})
+
+        # ── إدخالٌ يدويّ للمتابعة ────────────────────────────────────────
+        # **ولماذا يلزم.** بدأ التسجيلُ متأخّراً عن القراءة، فمن قرأ قبل
+        # النشر يظهر كأنّه لم يفتح. والرافعُ يعرف ما لا يعرفه الجدول.
+        #
+        # **ويُوسَم `manual` ولا يُخلط.** رقمٌ أُدخل عن ظنٍّ صادقٍ يبقى ظنّاً،
+        # ولو اختلط بالمقيس لم يبقَ في الجدول ما يُوثق به. فيُفصل ويُعلَن.
+        if path == "/api/progress/set":
+            if u["role"] != "uploader":
+                return self.json({"error": "forbidden"}, 403)
+            b = self.body_json() or {}
+            slug = (b.get("slug") or "").strip()
+            try:
+                uid = int(b.get("user_id"))
+                seen = max(0, int(b.get("seen") or 0))
+                mins = max(0, float(b.get("mins") or 0))
+            except (TypeError, ValueError):
+                return self.json({"error": "قيمٌ غير صالحة"}, 400)
+
+            c = db()
+            d = c.execute("SELECT id FROM dashboards WHERE slug=?",
+                          (slug,)).fetchone()
+            who = c.execute("SELECT id FROM users WHERE id=? AND role='reviewer'",
+                            (uid,)).fetchone()
+            if not d or not who:
+                c.close()
+                return self.json({"error": "لا لوحةَ أو لا مراجع"}, 404)
+            did, t = d["id"], now()
+
+            # مفاتيحُ الأقسام من الصفحة نفسِها، فالصفوفُ تشير إلى مواضعَ حقيقية
+            try:
+                with open(os.path.join(DASH_DIR, slug + ".html"),
+                          encoding="utf-8") as fh:
+                    keys = list(dict.fromkeys(
+                        re.findall(r'data-sec="([^"]+)"', fh.read())))
+            except OSError:
+                keys = []
+            seen = min(seen, len(keys)) if keys else seen
+
+            # **ولا يُمسّ المقيس.** يُحذف المُدخَلُ يدوياً وحدَه ثمّ يُعاد،
+            # فلا يمحو تعديلٌ يدويٌّ قراءةً حقيقيةً سُجّلت بينهما.
+            c.execute("""DELETE FROM section_views WHERE dashboard_id=?
+                         AND user_id=? AND manual=1""", (did, uid))
+            per = int(mins * 60000 / seen) if seen else 0
+            for k in keys[:seen]:
+                c.execute("""INSERT INTO section_views (dashboard_id,user_id,
+                              sec_key,seen_at,ms,manual) VALUES (?,?,?,?,?,1)
+                             ON CONFLICT(dashboard_id,user_id,sec_key)
+                             DO UPDATE SET ms=excluded.ms, manual=1""",
+                          (did, uid, k, t, per))
+            if seen or mins:
+                c.execute("""INSERT INTO views (dashboard_id,user_id,opens,
+                              first_at,last_at,manual) VALUES (?,?,1,?,?,1)
+                             ON CONFLICT(dashboard_id,user_id) DO UPDATE SET
+                              opens=MAX(opens,1), manual=1""",
+                          (did, uid, t, t))
+            else:
+                c.execute("""DELETE FROM views WHERE dashboard_id=? AND
+                             user_id=? AND manual=1""", (did, uid))
+            c.commit()
+            c.close()
+            return self.json({"ok": True, "seen": seen})
 
         if path == "/api/comments":
             b = self.body_json()

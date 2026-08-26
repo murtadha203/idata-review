@@ -416,14 +416,17 @@
           `/api/progress?d=${encodeURIComponent(RV.slug)}`)).json();
       } catch (e) { box.innerHTML = '<div class="ld">تعذّرت القراءة.</div>'; return; }
 
+      const edit = w => `<button class="ed" data-u="${w.id}" `
+        + `data-s="${w.seen || 0}" title="إدخالٌ يدويّ">تعديل</button>`;
       const rows = (j.who || []).map(w => {
+        const tag = w.manual ? ' <span class="man">يدويّ</span>' : "";
         if (!w.opens) {
-          return `<tr class="none"><td>${esc(w.name)}</td>
+          return `<tr class="none"><td>${esc(w.name)}${edit(w)}</td>
             <td colspan="3">لم يفتحها بعد</td></tr>`;
         }
         const pct = j.total ? Math.round(w.seen / j.total * 100) : 0;
         return `<tr>
-          <td>${esc(w.name)}</td>
+          <td>${esc(w.name)}${tag}${edit(w)}</td>
           <td><b>${w.seen}</b> من ${j.total}
               <span class="pc">${pct}%</span>
               <div class="bar"><i style="width:${pct}%"></i></div></td>
@@ -442,8 +445,33 @@
           في الشاشة ثانيةً كاملة. والزمنُ لا يُحسب إلّا والصفحةُ منظورة، فلا
           يُحتسب تبويبٌ متروكٌ مفتوحاً. ومن يمرّر سريعاً يظهر بلوغاً عالياً
           وزمناً معدوماً — وذاك خبرٌ في نفسه.</p>
-        <p class="fine dim">والمراجعون يرون تقدُّمَهم في شريطهم.</p>`;
+        <p class="fine dim">والمراجعون يرون تقدُّمَهم في شريطهم.
+          و<b>«يدويّ»</b> يعني رقماً أدخلتَه أنت لا قِسناه — يُفصل عن المقيس
+          عمداً، فما أُدخل عن ظنٍّ يبقى ظنّاً.</p>`;
       $("#rv-prog-x").onclick = () => { box.style.display = "none"; };
+      box.querySelectorAll("button.ed").forEach(b => {
+        b.onclick = async () => {
+          const cur = b.dataset.s;
+          const seen = prompt(
+            `كم قسماً بلغ من ${j.total}؟ (صفرٌ يمحو الإدخال اليدويّ)`, cur);
+          if (seen === null) return;
+          const mins = prompt("وكم دقيقةً تقديراً؟ (اتركها فارغةً إن لم تعرف)", "");
+          if (mins === null) return;
+          b.disabled = true;
+          try {
+            const r = await fetch("/api/progress/set", { method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ slug: RV.slug, user_id: +b.dataset.u,
+                                     seen: +seen || 0, mins: +mins || 0 }) });
+            const jj = await r.json().catch(() => ({}));
+            if (!r.ok || jj.error) throw new Error(jj.error || "تعذّر الحفظ");
+            btn.onclick(); btn.onclick();      // أُغلق ثمّ أُفتح فيُعاد التحميل
+          } catch (e) {
+            alert("لم يُحفظ: " + e.message);
+            b.disabled = false;
+          }
+        };
+      });
     };
   }
 
