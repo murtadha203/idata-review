@@ -17,7 +17,7 @@
  */
 (function () {
   const RV = window.RV, API = "/api/comments";
-  let all = [], filter = "open", pending = null;
+  let all = [], filter = "all", pending = null;
 
   const $ = (s, r) => (r || document).querySelector(s);
   const el = (t, c, h) => { const e = document.createElement(t);
@@ -78,7 +78,8 @@
     const p = el("div"); p.id = "rv-panel";
     p.innerHTML = `<header><span class="n">التعليقات</span>
       <select class="flt" id="rv-filter">
-        <option value="open">المفتوحة</option><option value="all">الكلّ</option>
+        <option value="all">الكلّ</option>
+        <option value="open">غير المعالَجة</option>
         <option value="mine">تعليقاتي</option></select></header>
       <div id="rv-editor"></div><div id="rv-list"></div>`;
     document.body.appendChild(p);
@@ -592,7 +593,14 @@
 
   // ═══ العرض ══════════════════════════════════════════════════════════════
   const visible = () => all.filter(c => filter === "all" ? true
-    : filter === "mine" ? c.author_id === RV.me.id : !c.resolved);
+    : filter === "mine" ? c.author_id === RV.me.id : true);
+
+  /* «2026-08-26T19:14:02+00:00» ← «08-26 · 19:14» */
+  function stamp(t) {
+    if (!t) return "";
+    const v = String(t).replace("T", " ");
+    return v.slice(5, 10) + " · " + v.slice(11, 16);
+  }
 
   function card(c, isRep) {
     const loc = locate(c);
@@ -604,7 +612,8 @@
       : esc(c.sec_label || c.sec_key);
     d.innerHTML =
       `<div class="h"><span class="au">${esc(c.author)}</span>` +
-      `<span class="dt">${esc((c.created_at || "").slice(5, 10))}</span></div>` +
+      `<span class="dt">${esc(stamp(c.created_at))}</span>` +
+      (c.resolved ? `<span class="ok">عولج</span>` : "") + `</div>` +
       (isRep ? "" : `<div class="loc">${where}</div>`) +
       (lost ? `<div class="warn">⚠ ${esc(loc.why)} — التعليق محفوظ</div>` : "") +
       (c.quote ? `<div class="q">${esc(c.quote)}</div>` : "") +

@@ -102,10 +102,34 @@ def collect(db_path, dash_dir):
                 quick.append(item)
             elif tot and seen < tot:
                 partial.append(item)
-        if never or quick or partial:
+        # ردودٌ على تعليقاته جاءت بعد آخر مرّةٍ فتح فيها الداشبورد
+        unseen = []
+        for d in dashes:
+            v = c.execute("""SELECT last_at FROM views
+                             WHERE dashboard_id=? AND user_id=?""",
+                          (d["id"], r["id"])).fetchone()
+            if not v or not v["last_at"]:
+                continue
+            n_new = c.execute("""
+              SELECT COUNT(*) n FROM comments k
+              JOIN comments p ON p.id = k.parent_id
+              WHERE k.dashboard_id=? AND p.author_id=? AND k.author_id<>?
+                AND k.created_at > ?""",
+              (d["id"], r["id"], r["id"], v["last_at"])).fetchone()["n"]
+            n_res = c.execute("""
+              SELECT COUNT(*) n FROM comments
+              WHERE dashboard_id=? AND author_id=? AND resolved=1
+                AND resolved_at IS NOT NULL AND resolved_at > ?""",
+              (d["id"], r["id"], v["last_at"])).fetchone()["n"]
+            if n_new + n_res:
+                unseen.append({"title": d["title"], "slug": d["slug"],
+                               "n": n_new + n_res})
+
+        if never or quick or partial or unseen:
             out.append({"id": r["id"], "name": r["name"],
                         "fem": r["gender"] == "f", "never": never,
-                        "quick": quick, "partial": partial})
+                        "quick": quick, "partial": partial,
+                        "unseen": unseen})
     c.close()
     return out
 
@@ -138,9 +162,15 @@ def _v(fem, m, f):
 
 
 def _heads(who):
-    """عناوينُ الكتل الثلاث، مصرَّفةً للمخاطَب وللعدد."""
+    """عناوينُ الكتل، مصرَّفةً للمخاطَب وللعدد."""
     fem = who.get("fem")
     out = {}
+    if who.get("unseen"):
+        k = sum(d["n"] for d in who["unseen"])
+        out["unseen"] = (f"{k} ردٌّ لم {_v(fem, 'ترَه', 'ترَيه')}"
+                         if k == 1 else
+                         f"{k} ردّاً لم {_v(fem, 'ترَها', 'ترَيها')}")
+        out["unseen"] += " على تعليقاتك:"
     if who["never"]:
         n = len(who["never"])
         out["never"] = (f"{_count(n)} لم "
@@ -163,6 +193,9 @@ def body(who, base_url):
     L = [f"أهلاً {who['name']}،", "",
          "هذه رسالة تلقائية بشأن مراجعة لوحات اي داتا.", ""]
     H = _heads(who)
+    if who.get("unseen"):
+        L += [H["unseen"]] + [f"  · {d['title']} — {d['n']}"
+                              for d in who["unseen"]] + [""]
     if who["never"]:
         L += [H["never"]] + [f"  · {d['title']}" for d in who["never"]] + [""]
     if who["quick"]:
@@ -206,6 +239,9 @@ def body_html(who, base_url):
         out.append(UL[1])
 
     H = _heads(who)
+    if who.get("unseen"):
+        block(who["unseen"], H["unseen"],
+              lambda d: f' <span style="color:#6b7280">— {d["n"]}</span>')
     if who["never"]:
         block(who["never"], H["never"])
     if who["quick"]:
@@ -225,6 +261,10 @@ def body_html(who, base_url):
 
 def subject(who):
     n = len(who["never"]) + len(who["quick"]) + len(who["partial"])
+    r = sum(d["n"] for d in who.get("unseen") or [])
+    if r and not n:
+        return ("مراجعة الداشبوردات: ردٌّ لم ترَه" if r == 1
+                else f"مراجعة الداشبوردات: {r} ردّاً لم ترَها")
     return f"مراجعة الداشبوردات: {_count(n)} بانتظارك"
 
 

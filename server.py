@@ -72,7 +72,8 @@ CREATE TABLE IF NOT EXISTS comments (
   part_key TEXT NOT NULL DEFAULT '', part_label TEXT,
   quote TEXT, body TEXT NOT NULL,
   author_id INTEGER NOT NULL, parent_id INTEGER,
-  resolved INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+  resolved INTEGER NOT NULL DEFAULT 0, resolved_at TEXT,
+  created_at TEXT NOT NULL,
   FOREIGN KEY (dashboard_id) REFERENCES dashboards(id),
   FOREIGN KEY (author_id) REFERENCES users(id));
 
@@ -178,6 +179,10 @@ def init():
         c.execute("ALTER TABLE users RENAME COLUMN code TO username")
 
     # وقواعدُ أُنشئت قبل عمود `manual` تُكمَّل بلا فقدِ صفّ
+    kcols = {r["name"] for r in c.execute("PRAGMA table_info(comments)")}
+    if kcols and "resolved_at" not in kcols:
+        c.execute("ALTER TABLE comments ADD COLUMN resolved_at TEXT")
+
     ucols2 = {r["name"] for r in c.execute("PRAGMA table_info(users)")}
     if ucols2 and "gender" not in ucols2:
         c.execute("ALTER TABLE users ADD COLUMN gender TEXT NOT NULL "
@@ -1024,7 +1029,10 @@ class H(BaseHTTPRequestHandler):
         if path.startswith("/api/comments/") and path.endswith("/resolve"):
             cid = path.split("/")[3]
             c = db()
-            c.execute("UPDATE comments SET resolved=1-resolved WHERE id=?", (cid,))
+            c.execute("""UPDATE comments
+                         SET resolved=1-resolved,
+                             resolved_at=CASE WHEN resolved=0 THEN ? END
+                         WHERE id=?""", (now(), cid))
             c.commit()
             r = c.execute("SELECT resolved FROM comments WHERE id=?", (cid,)).fetchone()
             c.close()
