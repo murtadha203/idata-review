@@ -615,7 +615,9 @@
       `<span class="dt">${esc(stamp(c.created_at))}</span>` +
       (c.resolved ? `<span class="ok">عولج</span>` : "") + `</div>` +
       (isRep ? "" : `<div class="loc">${where}</div>`) +
-      (lost ? `<div class="warn">⚠ ${esc(loc.why)} — التعليق محفوظ</div>` : "") +
+      (lost ? `<div class="warn">⚠ ${esc(loc.why)} — التعليق محفوظ` +
+        (c.sec_label ? `<br>كان في: <b>${esc(c.sec_label)}</b>` : "") +
+        `</div>` : "") +
       (c.quote ? `<div class="q">${esc(c.quote)}</div>` : "") +
       `<div class="b">${esc(c.body)}</div>` +
       `<div class="acts"><button data-a="reply">ردّ</button>` +
