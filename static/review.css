@@ -133,6 +133,37 @@ mark.rv-mark.rv-flash{animation:rvflash 1.5s ease}
 #rv-bar button.push{background:#0e7c86;color:#fff;font-weight:700}
 #rv-bar button.push:hover{background:#0a616a}
 #rv-bar button.push:disabled{background:#8fb6ba;cursor:default}
+#rv-bar button.prog{background:#3d4f77;color:#fff;font-weight:700}
+#rv-bar button.prog:hover{background:#31405f}
+#rv-bar .mine{font-size:12px;opacity:.8;white-space:nowrap}
+
+/* لوحُ المتابعة — يُفتح فوق الصفحة ولا يزحزحها */
+#rv-prog-box{position:fixed;top:64px;inset-inline-start:calc(var(--rv-w) + 16px);
+  width:520px;max-width:calc(100vw - 32px);z-index:9200;background:#fff;
+  border:1px solid var(--rv-line);border-radius:15px;padding:0 0 12px;
+  display:none;box-shadow:0 20px 56px rgba(26,40,74,.22);
+  font:13.5px/1.7 "Segoe UI","Noto Sans Arabic",sans-serif;
+  max-height:calc(100vh - 84px);overflow:auto}
+body.rv-collapsed #rv-prog-box{inset-inline-start:16px}
+#rv-prog-box header{display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;border-bottom:1px solid var(--rv-line);font-weight:700;
+  position:sticky;top:0;background:#fff;border-radius:15px 15px 0 0}
+#rv-prog-box .x{background:none;border:0;font-size:22px;cursor:pointer;
+  color:#6b7280;line-height:1}
+#rv-prog-box table{width:100%;border-collapse:collapse}
+#rv-prog-box th{text-align:start;font-size:12px;color:#6b7280;font-weight:600;
+  padding:8px 16px;border-bottom:1px solid var(--rv-line)}
+#rv-prog-box td{padding:10px 16px;border-bottom:1px solid #f1f3f7;
+  vertical-align:top}
+#rv-prog-box tr.none td{color:#9ca3af}
+#rv-prog-box .pc{color:#6b7280;font-size:12px;margin-inline-start:6px}
+#rv-prog-box .bar{height:5px;background:#eef1f6;border-radius:3px;
+  margin-top:5px;overflow:hidden}
+#rv-prog-box .bar i{display:block;height:100%;background:#0e7c86}
+#rv-prog-box td.dim,#rv-prog-box .dim{color:#9ca3af;font-size:12px}
+#rv-prog-box .fine{margin:10px 16px 0;font-size:12px;line-height:1.75;
+  color:#4b5563}
+#rv-prog-box .ld{padding:22px 16px;color:#6b7280}
 
 #rv-rate-box{position:fixed;top:64px;inset-inline-start:calc(var(--rv-w) + 16px);
   width:340px;z-index:9200;background:#fff;border:1px solid var(--rv-line);

@@ -62,7 +62,12 @@
       (canRate ? `<button id="rv-rate" class="rate">تقييمي</button>` : "") +
       (canPush ? `<button id="rv-push" class="push">تحديث الملفّ</button>` +
                  `<input type="file" id="rv-file" accept=".html,.htm"` +
-                 ` hidden>` : "") +
+                 ` hidden>` +
+                 `<button id="rv-prog" class="prog">المتابعة</button>` : "") +
+      /* **ولا يُقاس أحدٌ في الظلام.** المراجعُ يرى تقدّمَه كما يراه الرافع.
+         وإخفاؤه يشتري رقماً صادقاً اليوم وثقةً مكسورةً حين يُكتشف. */
+      (canRate ? `<span class="mine" id="rv-mine" title="يراه الرافعُ أيضاً">`
+                 + `</span>` : "") +
       `<span class="me">${esc(RV.me.name)}</span>` +
       `<button id="rv-toggle">إخفاء اللوح</button>`;
     document.body.appendChild(bar);
@@ -264,6 +269,182 @@
     if (!r.ok) return alert("تعذّر الحفظ");
     all.push(await r.json());
     closeEditor(); render();
+  }
+
+  // ═══ المتابعة: دخل · وصل · بقي ═══════════════════════════════════════
+  /* **ثلاثةُ أسئلةٍ يقيسها هذا الجزء**: هل فُتحت اللوحةُ أصلاً، وأيُّ أقسامها
+     بلغها القارئ، وكم بقي في كلٍّ منها.
+
+     **والزمنُ لا يُحسب إلّا والصفحةُ منظورة.** تبويبٌ متروكٌ مفتوحاً ليلةً
+     يعطي ثماني ساعاتٍ في قسمٍ لم يُقرأ. فيتوقّف العدّادُ عند `visibilitychange`
+     وعند `blur`، ويستأنف عند العودة.
+
+     **و«بلغ» غيرُ «قرأ».** القسمُ يُعدّ مبلوغاً إن ظهر في الشاشة ثانيةً
+     كاملة — فالتمريرُ السريع لا يدّعي قراءةَ ما مرّ عليه. والزمنُ يُقاس
+     مستقلّاً، فمن يمرّر يظهر بلوغاً عالياً وزمناً معدوماً، وذلك خبر. */
+  /* **والحالةُ الابتدائيةُ تُقاس لا تُفترض.** كانت `on` تبدأ `true` دائماً،
+     فلوحةٌ تُفتح في تبويبٍ خلفيٍّ تعدّ زمناً لم يُنظَر فيه — وهو العطبُ
+     نفسُه الذي وُضع الحارسُ لمنعه. فتُشتقّ من حال الصفحة عند الإقلاع. */
+  const isOn = () => document.visibilityState !== "hidden" && document.hasFocus();
+  const TRACK = { secs: Object.create(null), vis: new Map(), on: false };
+  const SEEN_MIN = 1000;      // ما دون الثانية مرورٌ لا بلوغ
+
+  function trackTick() {
+    const t = performance.now();
+    TRACK.vis.forEach((since, key) => {
+      if (since == null) return;
+      const dt = t - since;
+      if (dt <= 0) return;
+      TRACK.secs[key] = (TRACK.secs[key] || 0) + dt;
+      TRACK.vis.set(key, t);
+    });
+  }
+
+  function trackPause() {
+    trackTick();
+    TRACK.vis.forEach((_, k) => TRACK.vis.set(k, null));
+  }
+
+  function trackResume() {
+    const t = performance.now();
+    TRACK.vis.forEach((v, k) => { if (v === null) TRACK.vis.set(k, t); });
+  }
+
+  /* يرسل ما تجمّع ويُفرغ المخزن. و`beacon` عند المغادرة لأنّ `fetch`
+     يُلغى مع الصفحة، فيضيع آخرُ ما قُرئ — وهو غالباً أهمُّ ما قُرئ. */
+  function trackFlush(final) {
+    trackTick();
+    const secs = {};
+    let any = false;
+    for (const k in TRACK.secs) {
+      const ms = Math.round(TRACK.secs[k]);
+      if (ms > 0) { secs[k] = ms; any = true; }
+    }
+    if (!any && !final) return;
+    TRACK.secs = Object.create(null);
+    const body = JSON.stringify({ slug: RV.slug, secs });
+    if (final && navigator.sendBeacon) {
+      navigator.sendBeacon("/api/seen",
+        new Blob([body], { type: "application/json" }));
+    } else {
+      fetch("/api/seen", { method: "POST", keepalive: !!final,
+        headers: { "Content-Type": "application/json" }, body }).catch(() => {});
+    }
+  }
+
+  function startTracking() {
+    TRACK.on = isOn();
+    fetch("/api/seen", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: RV.slug, open: 1 }) }).catch(() => {});
+
+    const io = new IntersectionObserver(ents => {
+      const t = performance.now();
+      ents.forEach(e => {
+        const k = e.target.dataset.sec;
+        if (!k) return;
+        if (e.isIntersecting) {
+          if (!TRACK.vis.has(k) || TRACK.vis.get(k) === null)
+            TRACK.vis.set(k, TRACK.on ? t : null);
+          /* البلوغُ يُسجَّل بعد ثانيةٍ من الظهور المتّصل، لا فورَه */
+          setTimeout(() => {
+            if (e.target.isConnected && TRACK.vis.get(k) != null
+                && !TRACK.secs[k]) TRACK.secs[k] = TRACK.secs[k] || 1;
+          }, SEEN_MIN);
+        } else {
+          const since = TRACK.vis.get(k);
+          if (since != null) {
+            TRACK.secs[k] = (TRACK.secs[k] || 0) + (t - since);
+          }
+          TRACK.vis.delete(k);
+        }
+      });
+    }, { threshold: 0.25 });
+    document.querySelectorAll("[data-sec]").forEach(n => io.observe(n));
+
+    const idle = () => {
+      const on = isOn();
+      if (!on && TRACK.on) { TRACK.on = false; trackPause(); trackFlush(); }
+      else if (on && !TRACK.on) { TRACK.on = true; trackResume(); }
+    };
+    document.addEventListener("visibilitychange", idle);
+    addEventListener("blur", idle);
+    addEventListener("focus", idle);
+    setInterval(() => { if (TRACK.on) trackFlush(); }, 15000);
+    addEventListener("pagehide", () => trackFlush(true));
+  }
+
+  // ═══ عرضُ المتابعة ════════════════════════════════════════════════════
+  const fmt = ms => {
+    const s = Math.round(ms / 1000);
+    if (s < 60) return s + " ثانية";
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + " دقيقة" + (s % 60 ? ` و${s % 60} ثانية` : "");
+    return Math.floor(m / 60) + " ساعة" + (m % 60 ? ` و${m % 60} دقيقة` : "");
+  };
+  const when = t => (t || "").replace("T", " ").slice(0, 16) || "—";
+
+  /* سطرُ المراجع عن نفسه: أين بلغ من هذه اللوحة. */
+  async function showMine() {
+    const box = $("#rv-mine"); if (!box) return;
+    try {
+      const j = await (await fetch(
+        `/api/progress?d=${encodeURIComponent(RV.slug)}`)).json();
+      const me = (j.who || []).find(w => w.id === RV.me.id);
+      if (!me || !me.seen) { box.textContent = ""; return; }
+      box.textContent = `بلغتَ ${me.seen} من ${j.total}`;
+    } catch (e) { /* الصمتُ أهونُ من رقمٍ كاذب */ }
+  }
+
+  /* لوحُ الرافع: من فتح، وأين وصل، وكم بقي. */
+  function wireProgress() {
+    const btn = $("#rv-prog");
+    let box = null;
+    btn.onclick = async () => {
+      if (box && box.style.display !== "none") {
+        box.style.display = "none"; return;
+      }
+      if (!box) {
+        box = el("div"); box.id = "rv-prog-box";
+        document.body.appendChild(box);
+      }
+      box.style.display = "block";
+      box.innerHTML = '<div class="ld">جارٍ التحميل…</div>';
+      let j;
+      try {
+        j = await (await fetch(
+          `/api/progress?d=${encodeURIComponent(RV.slug)}`)).json();
+      } catch (e) { box.innerHTML = '<div class="ld">تعذّرت القراءة.</div>'; return; }
+
+      const rows = (j.who || []).map(w => {
+        if (!w.opens) {
+          return `<tr class="none"><td>${esc(w.name)}</td>
+            <td colspan="3">لم يفتحها بعد</td></tr>`;
+        }
+        const pct = j.total ? Math.round(w.seen / j.total * 100) : 0;
+        return `<tr>
+          <td>${esc(w.name)}</td>
+          <td><b>${w.seen}</b> من ${j.total}
+              <span class="pc">${pct}%</span>
+              <div class="bar"><i style="width:${pct}%"></i></div></td>
+          <td>${fmt(w.ms)}</td>
+          <td class="dim">${esc(when(w.last_at))}<br>
+              <span>${w.opens} مرّة</span></td></tr>`;
+      }).join("");
+
+      box.innerHTML = `<header>المتابعة
+          <button class="x" id="rv-prog-x">×</button></header>
+        <table><thead><tr><th>المراجع</th><th>أين بلغ</th>
+          <th>كم بقي</th><th>آخر فتح</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="4">لا مراجعين.</td></tr>'}</tbody>
+        </table>
+        <p class="fine"><b>«بلغ» ليست «قرأ».</b> القسمُ يُعدّ مبلوغاً إن ظهر
+          في الشاشة ثانيةً كاملة. والزمنُ لا يُحسب إلّا والصفحةُ منظورة، فلا
+          يُحتسب تبويبٌ متروكٌ مفتوحاً. ومن يمرّر سريعاً يظهر بلوغاً عالياً
+          وزمناً معدوماً — وذاك خبرٌ في نفسه.</p>
+        <p class="fine dim">والمراجعون يرون تقدُّمَهم في شريطهم.</p>`;
+      $("#rv-prog-x").onclick = () => { box.style.display = "none"; };
+    };
   }
 
   // ═══ تحديثُ ملفّ اللوحة ═══════════════════════════════════════════════
@@ -520,7 +701,12 @@
     render();
   }
 
-  function start() { chrome(); wire(); load(); loadVerdicts(); reflow(); }
+  function start() {
+    chrome(); wire(); load(); loadVerdicts(); reflow();
+    startTracking();
+    if (RV.me.role === "uploader") wireProgress();
+    else setInterval(showMine, 20000), showMine();
+  }
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", start);
   else start();

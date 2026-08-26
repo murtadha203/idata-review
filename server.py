@@ -23,6 +23,7 @@ import re
 import secrets
 import sqlite3
 import sys
+import threading
 import urllib.parse
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -77,6 +78,35 @@ CREATE TABLE IF NOT EXISTS comments (
 CREATE INDEX IF NOT EXISTS ix_c_dash ON comments(dashboard_id);
 
 -- تقييمُ المراجع للوحة كلّها: واحدٌ لكلّ مراجعٍ لكلّ لوحة، يُحدَّث ولا يُكرَّر.
+-- ═══ المتابعة: هل فُتحت، وأين وصل، وكم بقي ═══════════════════════════════
+-- **ثلاثةُ أسئلةٍ لا سؤالٌ واحد**، ولكلٍّ منها عمودُه:
+--   `opens` · `first_at` · `last_at`   هل دخل أصلاً، ومتى، وكم مرّة
+--   `section_views.seen_at`            أين وصل — أوّلُ ظهورٍ لكلِّ قسم
+--   `section_views.ms`                 كم بقي في القسم، مجموعاً
+--
+-- **ولا يُحسب زمنٌ والصفحةُ خلف تبويب.** تبويبٌ متروكٌ مفتوحاً ليلةً يعطي
+-- ثماني ساعاتٍ في قسمٍ لم يُقرأ، فيُفسد المقياسَ لا يزيّنه. فالعميلُ لا
+-- يرسل إلّا زمنَ الظهور الفعليّ، والخادمُ يسقف الدفعةَ الواحدة.
+CREATE TABLE IF NOT EXISTS views (
+  id INTEGER PRIMARY KEY,
+  dashboard_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+  opens INTEGER NOT NULL DEFAULT 0,
+  first_at TEXT NOT NULL, last_at TEXT NOT NULL,
+  UNIQUE (dashboard_id, user_id),
+  FOREIGN KEY (dashboard_id) REFERENCES dashboards(id),
+  FOREIGN KEY (user_id) REFERENCES users(id));
+
+CREATE TABLE IF NOT EXISTS section_views (
+  id INTEGER PRIMARY KEY,
+  dashboard_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+  sec_key TEXT NOT NULL, seen_at TEXT NOT NULL,
+  ms INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (dashboard_id, user_id, sec_key),
+  FOREIGN KEY (dashboard_id) REFERENCES dashboards(id),
+  FOREIGN KEY (user_id) REFERENCES users(id));
+
+CREATE INDEX IF NOT EXISTS ix_sv ON section_views(dashboard_id, user_id);
+
 CREATE TABLE IF NOT EXISTS verdicts (
   id INTEGER PRIMARY KEY,
   dashboard_id INTEGER NOT NULL, reviewer_id INTEGER NOT NULL,
@@ -103,15 +133,19 @@ def load_team():
             raw = f.read()
     if raw:
         try:
-            return [(t["username"], t["name"], t["role"]) for t in json.loads(raw)]
+            return [(t["username"], t["name"], t["role"],
+                     (t.get("email") or "").strip())
+                    for t in json.loads(raw)]
         except (ValueError, KeyError) as e:
             sys.exit(f"سجلّ الفريق غير سليم: {e}")
     # سجلٌّ تجريبيّ — أسماؤه عشوائية، فلا يُستعمل بالخطأ في الإنتاج.
     print("⚠ لا سجلّ فريق — أُنشئ سجلٌّ تجريبيّ. أنشئ config/team.json.")
-    return [(f"demo_{secrets.randbelow(9000) + 1000}", "مستخدم تجريبيّ", "uploader")]
+    return [(f"demo_{secrets.randbelow(9000) + 1000}", "مستخدم تجريبيّ",
+             "uploader", "")]
 
 
 TEAM = load_team()
+EMAILS = {t[1]: t[3] for t in TEAM if len(t) > 3 and t[3]}
 
 
 def db():
@@ -137,8 +171,8 @@ def init():
         c.execute("ALTER TABLE users RENAME COLUMN code TO username")
 
     have = {r["name"]: r["id"] for r in c.execute("SELECT id, name FROM users")}
-    want = {name: (un, role) for un, name, role in TEAM}
-    for un, name, role in TEAM:
+    want = {t[1]: t for t in TEAM}
+    for un, name, role, _mail in TEAM:
         if name in have:
             c.execute("UPDATE users SET username=?, role=? WHERE id=?",
                       (un, role, have[name]))
@@ -567,13 +601,98 @@ class H(BaseHTTPRequestHandler):
                 page = fh.read()
             # طبقة التعليق تُحقن، ولا يُمسّ شيءٌ من الصفحة نفسها
             ctx = {"slug": slug, "status": d["status"] or "review",
-                   "me": {"id": u["id"], "name": u["name"], "role": u["role"]}}
+                   "me": {"id": u["id"], "name": u["name"],
+                          "role": u["role"]}}
             inject = (f'<link rel="stylesheet" href="/static/review.css">'
                       f'<script>window.RV={json.dumps(ctx, ensure_ascii=False)};'
                       f'</script>'
                       f'<script src="/static/review.js" defer></script>')
             page = page.replace("</head>", inject + "</head>", 1)
             return self.send(page)
+
+        # **ويُقرأ التقدّمُ بالأقسام لا بالنِّسَب وحدَها.** «بلغ 58 من 72»
+        # يدعوك تسأل، و«80%» يوهمك أنّك عرفت. فتُرسل الأعدادُ خاماً وتُعرض
+        # كما هي، والنسبةُ معها لا بدلاً منها.
+        if path == "/api/progress":
+            slug = q.get("d", [""])[0]
+            c = db()
+            d = c.execute("SELECT id, slug FROM dashboards WHERE slug=?",
+                          (slug,)).fetchone()
+            if not d:
+                c.close()
+                return self.json({"error": "no dashboard"}, 404)
+            try:
+                with open(os.path.join(DASH_DIR, slug + ".html"),
+                          encoding="utf-8") as fh:
+                    total = len(set(re.findall(r'data-sec="([^"]+)"',
+                                               fh.read())))
+            except OSError:
+                total = 0
+            # **وإخفاءُ الزرّ ليس منعاً.** كان هذا المسارُ بلا فحصِ دورٍ
+            # إطلاقاً، فأيُّ مراجعٍ يعرفه يقرأ به زمنَ زملائه وأينَ بلغوا.
+            # **وذاك غيرُ ما طُلب**: الرافعُ يتابع المراجعين، والمراجعُ لا
+            # يتابع أقرانه.
+            #
+            # فالرافعُ يرى الجميع، وكلُّ من عداه يرى صفَّه وحدَه — فيبقى
+            # سطرُ المراجع عن نفسه عاملاً بلا أن ينكشف غيرُه.
+            mine_only = u["role"] != "uploader"
+            rows = c.execute("""
+              SELECT us.id, us.name, us.role,
+                     v.opens, v.first_at, v.last_at,
+                     (SELECT COUNT(*) FROM section_views sv
+                       WHERE sv.dashboard_id=? AND sv.user_id=us.id) AS seen,
+                     (SELECT COALESCE(SUM(ms),0) FROM section_views sv
+                       WHERE sv.dashboard_id=? AND sv.user_id=us.id) AS ms
+              FROM users us
+              LEFT JOIN views v ON v.dashboard_id=? AND v.user_id=us.id
+              WHERE us.role='reviewer' AND (?=0 OR us.id=?)
+              ORDER BY us.name""",
+                            (d["id"], d["id"], d["id"],
+                             1 if mine_only else 0, u["id"])).fetchall()
+            # وتفصيلُ الأقسام لمن طلبه
+            det = {}
+            if q.get("who") and not mine_only:
+                for r in c.execute("""SELECT sec_key, ms, seen_at
+                                      FROM section_views
+                                      WHERE dashboard_id=? AND user_id=?""",
+                                   (d["id"], int(q["who"][0]))):
+                    det[r["sec_key"]] = {"ms": r["ms"], "at": r["seen_at"]}
+            c.close()
+            return self.json({"total": total, "who": [dict(r) for r in rows],
+                              "detail": det})
+
+        # **ولا تُرسَل رسالةٌ لم تُقرأ.** هذا المسارُ يُظهر نصَّ ما سيصل
+        # كلَّ مراجعٍ الأحدَ القادم، بلا إرسال — فيُقرأ قبل أن يُفعَّل.
+        if path == "/digest":
+            if u["role"] != "uploader":
+                return self.send("403", 403)
+            import digest
+            emails = EMAILS
+            base = os.environ.get("BASE_URL", "")
+            rows, msgs, skipped, _ = digest.run_once(
+                DB_PATH, DASH_DIR, emails, base or "/", do_send=False)
+            out = [f"<h2>معاينةُ الرسالة الأسبوعية</h2>"
+                   f"<p>الموعد القادم: <b>{digest.next_run():%Y-%m-%d %H:%M}</b> "
+                   f"بتوقيت بغداد · الإرسال "
+                   f"<b>{'مفعَّل' if digest.ENABLED else 'معطَّل'}</b> · "
+                   f"المفتاح "
+                   f"<b>{'موجود' if os.environ.get('RESEND_API_KEY') else 'غائب'}"
+                   f"</b></p>"]
+            if skipped:
+                out.append("<p><b>بلا بريدٍ في السجلّ فلن تصلهم:</b> "
+                           + esc(" · ".join(skipped)) + "</p>")
+            for w in rows:
+                out.append(f"<hr><p><b>إلى:</b> {esc(w['name'])} "
+                           f"&lt;{esc(emails.get(w['name'], 'لا بريد'))}&gt;<br>"
+                           f"<b>الموضوع:</b> {esc(digest.subject(w))}</p>"
+                           f"<pre style='white-space:pre-wrap;font:14px/1.9 "
+                           f'"Segoe UI",sans-serif'
+                           f"'>{esc(digest.body(w, base or '/'))}</pre>")
+            if not rows:
+                out.append("<p>لا شيء يُرسَل — كلُّ مراجعٍ أنهى ما عليه.</p>")
+            return self.send(SHELL.format(title="معاينة الرسالة",
+                                          body="<div class=\"wrap\">"
+                                               + "".join(out) + "</div>"))
 
         if path == "/api/verdicts":
             return self.json(verdict_state(q.get("d", [""])[0]))
@@ -729,6 +848,48 @@ class H(BaseHTTPRequestHandler):
             return self.json({"ok": True, "slug": slug,
                               "kept": kept, "lost": lost, "libs": moved})
 
+        # ── المتابعة: نبضةٌ من الصفحة ────────────────────────────────────
+        # **دفعاتٌ لا نبضةٌ لكلّ ثانية.** يجمع العميلُ ما ظهر وما بقي ثمّ
+        # يرسل كلَّ خمسَ عشرةَ ثانيةً وعند مغادرة الصفحة، فلا يُثقل الخادمَ
+        # ولا يُفقد ما جُمع إن أُغلق التبويبُ فجأة.
+        if path == "/api/seen":
+            b = self.body_json() or {}
+            slug = (b.get("slug") or "").strip()
+            c = db()
+            d = c.execute("SELECT id FROM dashboards WHERE slug=?",
+                          (slug,)).fetchone()
+            if not d:
+                c.close()
+                return self.json({"error": "no dashboard"}, 404)
+            did, uid, t = d["id"], u["id"], now()
+
+            # `open=1` مرّةً واحدةً عند تحميل الصفحة لا مع كلّ دفعة
+            if b.get("open"):
+                c.execute("""INSERT INTO views (dashboard_id,user_id,opens,
+                              first_at,last_at) VALUES (?,?,1,?,?)
+                             ON CONFLICT(dashboard_id,user_id) DO UPDATE SET
+                              opens=opens+1, last_at=excluded.last_at""",
+                          (did, uid, t, t))
+            else:
+                c.execute("""UPDATE views SET last_at=? WHERE dashboard_id=?
+                             AND user_id=?""", (t, did, uid))
+
+            # **والسقفُ حارسٌ لا تجميل.** ساعةٌ في قسمٍ واحدٍ في دفعةٍ واحدة
+            # يعني ساعةً لم تُقرأ فيها الصفحة — أو عميلاً عابثاً. فيُقصّ.
+            CAP = 5 * 60 * 1000
+            for k, ms in (b.get("secs") or {}).items():
+                if not isinstance(k, str) or not isinstance(ms, (int, float)):
+                    continue
+                ms = max(0, min(int(ms), CAP))
+                c.execute("""INSERT INTO section_views (dashboard_id,user_id,
+                              sec_key,seen_at,ms) VALUES (?,?,?,?,?)
+                             ON CONFLICT(dashboard_id,user_id,sec_key)
+                             DO UPDATE SET ms = ms + excluded.ms""",
+                          (did, uid, k[:80], t, ms))
+            c.commit()
+            c.close()
+            return self.json({"ok": True})
+
         if path == "/api/comments":
             b = self.body_json()
             if b is None:
@@ -814,7 +975,29 @@ class H(BaseHTTPRequestHandler):
         self.json({"error": "404"}, 404)
 
 
+def start_digest():
+    """يشغّل جدولَ الرسالة الأسبوعية في خيطٍ خلفيّ.
+
+    **ولا يقوم إن كان الإرسالُ معطَّلاً**، فلا خيطَ يدور بلا عمل. وتشغيلُه
+    مشروطٌ بمفتاحٍ صريح: نشرُ الخادم لا يبدأ مراسلةَ أحد.
+    """
+    import digest
+    if not digest.ENABLED:
+        print("الرسالةُ الأسبوعية: معطَّلة (MAIL_ENABLED ليست 1)")
+        return
+    if not os.environ.get("RESEND_API_KEY"):
+        print("الرسالةُ الأسبوعية: مفعَّلةٌ بلا RESEND_API_KEY — لن تُرسَل.")
+        return
+    base = os.environ.get("BASE_URL", "")
+    t = threading.Thread(target=digest.loop, daemon=True,
+                         args=(DB_PATH, DASH_DIR, lambda: EMAILS, base))
+    t.start()
+    print(f"الرسالةُ الأسبوعية: القادمة {digest.next_run():%Y-%m-%d %H:%M} "
+          f"بتوقيت بغداد · {len(EMAILS)} عنواناً في السجلّ")
+
+
 if __name__ == "__main__":
     init()
+    start_digest()
     print(f"يعمل على {HOST}:{PORT}")
     ThreadingHTTPServer((HOST, PORT), H).serve_forever()
