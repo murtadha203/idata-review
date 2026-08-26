@@ -390,7 +390,8 @@
           `${API}?d=${encodeURIComponent(RV.slug)}`)).json();
         n = (cs || []).length;
       } catch (e) { /* العددُ تحسينٌ لا شرط */ }
-      const title = document.title.replace(/^معاينة — /, "").trim();
+      // العنوانُ من السجلّ، فهو ما يقارن به الخادم
+      const title = (RV.title || "").trim();
       const warn = "حذفٌ لا يُسترجَع.\n\n"
         + (n ? `سيُحذف معه ${n} تعليقاً، ` : "سيُحذف معه ")
         + "وكلُّ التقييمات وبيانات المتابعة.\n\n"
@@ -398,7 +399,11 @@
       const typed = prompt(warn, "");
       if (typed === null) return;
       if (typed.trim() !== title) {
-        alert("العنوانُ لا يطابق — لم يُحذف شيء.");
+        alert(`العنوانُ لا يطابق — لم يُحذف شيء.
+
+`
+          + `المطلوب: ${title}
+وكتبتَ:  ${typed.trim()}`);
         return;
       }
       const b = $("#rv-del");

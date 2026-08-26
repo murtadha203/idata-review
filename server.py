@@ -611,7 +611,8 @@ class H(BaseHTTPRequestHandler):
             with open(f, encoding="utf-8") as fh:
                 page = fh.read()
             # طبقة التعليق تُحقن، ولا يُمسّ شيءٌ من الصفحة نفسها
-            ctx = {"slug": slug, "status": d["status"] or "review",
+            ctx = {"slug": slug, "title": d["title"],
+                   "status": d["status"] or "review",
                    "me": {"id": u["id"], "name": u["name"],
                           "role": u["role"]}}
             inject = (f'<link rel="stylesheet" href="/static/review.css">'
