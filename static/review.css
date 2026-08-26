@@ -165,8 +165,6 @@ body.rv-collapsed #rv-prog-box{inset-inline-start:16px}
   margin-top:5px;overflow:hidden}
 #rv-prog-box .bar i{display:block;height:100%;background:#0e7c86}
 #rv-prog-box td.dim,#rv-prog-box .dim{color:#9ca3af;font-size:12px}
-#rv-prog-box .man{font-size:10.5px;background:#fde68a;color:#78350f;
-  border-radius:4px;padding:1px 5px;margin-inline-start:5px}
 #rv-prog-box .fine{margin:10px 16px 0;font-size:12px;line-height:1.75;
   color:#4b5563}
 #rv-prog-box .ld{padding:22px 16px;color:#6b7280}

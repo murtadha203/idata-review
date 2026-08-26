@@ -463,14 +463,13 @@
       } catch (e) { box.innerHTML = '<div class="ld">تعذّرت القراءة.</div>'; return; }
 
       const rows = (j.who || []).map(w => {
-        const tag = w.manual ? ' <span class="man">يدويّ</span>' : "";
         if (!w.opens) {
           return `<tr class="none"><td>${esc(w.name)}</td>
             <td colspan="3">لم يفتحها بعد</td></tr>`;
         }
         const pct = j.total ? Math.round(w.seen / j.total * 100) : 0;
         return `<tr>
-          <td>${esc(w.name)}${tag}</td>
+          <td>${esc(w.name)}</td>
           <td><b>${w.seen}</b> من ${j.total}
               <span class="pc">${pct}%</span>
               <div class="bar"><i style="width:${pct}%"></i></div></td>
@@ -489,9 +488,7 @@
           في الشاشة ثانيةً كاملة. والزمنُ لا يُحسب إلّا والصفحةُ منظورة، فلا
           يُحتسب تبويبٌ متروكٌ مفتوحاً. ومن يمرّر سريعاً يظهر بلوغاً عالياً
           وزمناً معدوماً — وذاك خبرٌ في نفسه.</p>
-        <p class="fine dim">والمراجعون يرون تقدُّمَهم في شريطهم.
-          و<b>«يدويّ»</b> رقمٌ أُدخل بيدٍ قبل أن يبدأ القياس، لا رقمٌ
-          قِسناه — ويبقى موسوماً كي لا يُقرأ مقيساً.</p>`;
+        <p class="fine dim">والمراجعون يرون تقدُّمَهم في شريطهم.</p>`;
       $("#rv-prog-x").onclick = () => { box.style.display = "none"; };
     };
   }
