@@ -37,9 +37,19 @@ _load_env()
 BAGHDAD = timezone(timedelta(hours=3))     # بلا توقيتٍ صيفيّ منذ 2015
 
 # ── العتبات ────────────────────────────────────────────────────────────────
-# **والعتبةُ حكمٌ لا قياس.** «دقيقةٌ» ليست حدَّ القراءة، بل حدُّ ما لا يمكن
-# أن يكون قراءةً للوحةٍ فيها عشرات الأقسام. فتُضبط بالبيئة إن اتّضح غيرُها.
-MIN_MS = int(os.environ.get("DIGEST_MIN_MS", 60_000))
+# **والعتبةُ تتبع طولَ الداشبورد لا تكون رقماً واحداً للجميع.** دقيقةٌ على
+# عشرين قسماً غيرُ دقيقةٍ على اثنين وسبعين. فتُحسب: ثلاثُ ثوانٍ لكلِّ قسم،
+# وهي أدنى ما يُلمَح فيه رسمٌ أو بطاقةٌ لا ما يُقرأ فيه.
+#
+# **وأرضيّةٌ تحت الحساب** كي لا يمرّ داشبوردٌ قصيرٌ بلمحةٍ: خمسُ ثوانٍ
+# لثلاثة أقسامٍ ليست قراءةً مهما قصُر.
+SEC_MS = int(os.environ.get("DIGEST_MS_PER_SECTION", 3_000))
+FLOOR_MS = int(os.environ.get("DIGEST_FLOOR_MS", 30_000))
+
+
+def min_ms(total):
+    """أدنى زمنٍ يُعدّ قراءةً لداشبوردٍ فيه `total` قسماً."""
+    return max(FLOOR_MS, SEC_MS * (total or 0))
 SEND_HOUR = int(os.environ.get("DIGEST_HOUR", 10))
 SEND_DOW = int(os.environ.get("DIGEST_DOW", 6))     # 6 = الأحد
 ENABLED = os.environ.get("MAIL_ENABLED", "") == "1"
@@ -86,7 +96,7 @@ def collect(db_path, dash_dir):
             seen, ms, tot = s["n"], s["ms"], total[d["id"]]
             item = {"title": d["title"], "slug": d["slug"],
                     "seen": seen, "total": tot, "ms": ms}
-            if ms < MIN_MS:
+            if ms < min_ms(tot):
                 quick.append(item)
             elif tot and seen < tot:
                 partial.append(item)
@@ -257,7 +267,8 @@ if __name__ == "__main__":
     rows, msgs, skipped, res = run_once(DB, DD, emails, url,
                                         do_send="--send" in sys.argv)
     print(f"الموعد القادم: {next_run():%Y-%m-%d %H:%M} بتوقيت بغداد")
-    print(f"عتبةُ «وقتٌ قليل»: {MIN_MS/1000:.0f} ثانية · "
+    print(f"عتبةُ «وقتٌ قليل»: {SEC_MS/1000:.0f} ثوانٍ للقسم "
+          f"(أرضيّةٌ {FLOOR_MS/1000:.0f}) · "
           f"الإرسال {'مفعَّل' if ENABLED else 'معطَّل'}\n")
     for w in rows:
         print("═" * 62)
