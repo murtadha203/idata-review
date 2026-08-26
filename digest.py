@@ -15,6 +15,7 @@ import os
 import sqlite3
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
@@ -152,6 +153,60 @@ def body(who, base_url):
     return "\n".join(L)
 
 
+# ── نسخةُ HTML: العناوينُ روابطُ تُنقر ────────────────────────────────────
+# **وتُرسَل النسختان معاً.** النصّيّةُ تبقى لمن يعطّل الـHTML أو يقرأ في
+# عميلٍ لا يعرضه، فلا يصل أحداً بريدٌ فارغ. و`text` هي نفسُها بلا نقصان.
+def _esc(t):
+    return (str(t).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def _link(d, base):
+    """رابطُ الداشبورد. **والمعرّفُ عربيٌّ فيُرمَّز**، وإلّا كُسر الرابط."""
+    href = f"{base.rstrip('/')}/d/{urllib.parse.quote(d.get('slug') or '')}"
+    return f'<a href="{_esc(href)}" style="color:#0e7c86">{_esc(d["title"])}</a>'
+
+
+def body_html(who, base_url):
+    P = ('<p style="margin:0 0 14px">', "</p>")
+    H = ('<p style="margin:18px 0 6px;font-weight:700">', "</p>")
+    UL = ('<ul style="margin:0;padding-inline-start:20px">', "</ul>")
+    _FONT = "font:15px/1.9 Tajawal,Arial,sans-serif;color:#1a284a"
+    out = [f'<div dir="rtl" style="{_FONT};max-width:620px">']
+    out += [P[0] + f"أهلاً {_esc(who['name'])}،" + P[1]]
+    out += [P[0] + "هذه رسالة تلقائية بشأن مراجعة لوحات اي داتا." + P[1]]
+
+    def block(items, head, tail=lambda d: ""):
+        out.append(H[0] + head + H[1])
+        out.append(UL[0])
+        for d in items:
+            out.append("<li>" + _link(d, base_url) + tail(d) + "</li>")
+        out.append(UL[1])
+
+    if who["never"]:
+        n = len(who["never"])
+        block(who["never"],
+              f"{_count(n)} لم تفتح{_pro(n, 'ه', 'هما', 'ها')} بعد:")
+    if who["quick"]:
+        n = len(who["quick"])
+        block(who["quick"],
+              f"{_count(n)} لم تمكث في{_pro(n, 'ه', 'هما', 'ها')} إلّا قليلاً:",
+              lambda d: f' <span style="color:#6b7280">— {_mins(d["ms"])}</span>')
+    if who["partial"]:
+        n = len(who["partial"])
+        block(who["partial"],
+              f"{_count(n)} بلغتَ بعض{_pro(n, 'ه', 'هما', 'ها')} "
+              f"ولم تُكمل{_pro(n, 'ه', 'هما', 'ها')}:",
+              lambda d: f' <span style="color:#6b7280">— '
+                        f'{d["seen"]} قسماً من {d["total"]}</span>')
+
+    out.append(f'<p style="margin:22px 0 0">'
+               f'<a href="{_esc(base_url)}" style="color:#0e7c86">'
+               f'كلُّ الداشبوردات</a></p>')
+    out.append("</div>")
+    return "".join(out)
+
+
 def subject(who):
     n = len(who["never"]) + len(who["quick"]) + len(who["partial"])
     return f"مراجعة الداشبوردات: {_count(n)} بانتظارك"
@@ -177,10 +232,10 @@ def send(msgs):
     if not key:
         return 0, "بلا RESEND_API_KEY"
     sent, failed = 0, []
-    for to, subj, text in msgs:
+    for to, subj, text, html in msgs:
         payload = json.dumps({
             "from": f"{FROM_NAME} <{FROM}>", "to": [to],
-            "subject": subj, "text": text,
+            "subject": subj, "text": text, "html": html,
         }).encode("utf-8")
         req = urllib.request.Request(
             API, data=payload, method="POST",
@@ -213,7 +268,8 @@ def run_once(db_path, dash_dir, emails, base_url, do_send=False):
     msgs, skipped = [], []
     for w in rows:
         addr = emails.get(w["name"])
-        (msgs.append((addr, subject(w), body(w, base_url))) if addr
+        (msgs.append((addr, subject(w), body(w, base_url),
+                      body_html(w, base_url))) if addr
          else skipped.append(w["name"]))
     if do_send and msgs:
         n, note = send(msgs)
