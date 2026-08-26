@@ -191,7 +191,7 @@ def _link(d, base):
 
 def body_html(who, base_url):
     P = ('<p style="margin:0 0 14px">', "</p>")
-    H = ('<p style="margin:18px 0 6px;font-weight:700">', "</p>")
+    HD = ('<p style="margin:18px 0 6px;font-weight:700">', "</p>")
     UL = ('<ul style="margin:0;padding-inline-start:20px">', "</ul>")
     _FONT = "font:15px/1.9 Tajawal,Arial,sans-serif;color:#1a284a"
     out = [f'<div dir="rtl" style="{_FONT};max-width:620px">']
@@ -199,7 +199,7 @@ def body_html(who, base_url):
     out += [P[0] + "هذه رسالة تلقائية بشأن مراجعة لوحات اي داتا." + P[1]]
 
     def block(items, head, tail=lambda d: ""):
-        out.append(H[0] + head + H[1])
+        out.append(HD[0] + head + HD[1])
         out.append(UL[0])
         for d in items:
             out.append("<li>" + _link(d, base_url) + tail(d) + "</li>")
