@@ -921,6 +921,46 @@ class H(BaseHTTPRequestHandler):
             c.close()
             return self.json({"ok": True})
 
+        # ── جسرُ المراسي بعد تغيير طريقة التوليد ────────────────────────
+        # **ولا يُنقل تعليقٌ إلّا بمقابلٍ محسوب.** الجسرُ يأتي من الباني:
+        # لكلِّ قسمٍ قائمٍ مفتاحُه القديمُ ومعرِّفُه الجديد، فالنقلُ يقينٌ.
+        # وما لا مقابلَ له يبقى يتيماً معلَناً — والرميُ على قسمٍ يشبهه
+        # أسوأُ من الفقد، لأنّه ينسب كلاماً إلى غير موضعه بلا أن يظهر.
+        if path == "/api/remap":
+            if u["role"] != "uploader":
+                return self.json({"error": "forbidden"}, 403)
+            body = self.body_json() or {}
+            slug = (body.get("slug") or "").strip()
+            mp = body.get("map")
+            if not isinstance(mp, dict) or not mp or not slug:
+                return self.json({"error": "جسرٌ فارغٌ أو غيرُ سليم"}, 400)
+            c = db()
+            d = c.execute("SELECT id FROM dashboards WHERE slug=?",
+                          (slug,)).fetchone()
+            if not d:
+                c.close()
+                return self.json({"error": "لا لوحةَ بهذا المعرّف."}, 404)
+            did = d["id"]
+            moved, untouched = 0, 0
+            for old, new in mp.items():
+                if not (isinstance(old, str) and isinstance(new, str)):
+                    continue
+                r = c.execute("""UPDATE comments SET sec_key=?
+                                 WHERE dashboard_id=? AND sec_key=?""",
+                              (new, did, old))
+                moved += r.rowcount
+            # وما بقي بلا مقابل
+            keys = set(mp.values())
+            for r in c.execute("""SELECT sec_key, COUNT(*) n FROM comments
+                                  WHERE dashboard_id=? GROUP BY sec_key""",
+                               (did,)):
+                if r["sec_key"] not in keys:
+                    untouched += r["n"]
+            c.commit()
+            c.close()
+            return self.json({"ok": True, "moved": moved,
+                              "orphans": untouched})
+
         if path == "/api/delete":
             if u["role"] != "uploader":
                 return self.json({"error": "forbidden"}, 403)
