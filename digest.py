@@ -119,8 +119,9 @@ def collect(db_path, dash_dir):
             n_res = c.execute("""
               SELECT COUNT(*) n FROM comments
               WHERE dashboard_id=? AND author_id=? AND resolved=1
-                AND resolved_at IS NOT NULL AND resolved_at > ?""",
-              (d["id"], r["id"], v["last_at"])).fetchone()["n"]
+                AND resolved_at IS NOT NULL AND resolved_at > ?
+                AND resolved_by IS NOT NULL AND resolved_by <> ?""",
+              (d["id"], r["id"], v["last_at"], r["id"])).fetchone()["n"]
             if n_new + n_res:
                 unseen.append({"title": d["title"], "slug": d["slug"],
                                "n": n_new + n_res})

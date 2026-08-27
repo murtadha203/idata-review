@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS comments (
   part_key TEXT NOT NULL DEFAULT '', part_label TEXT,
   quote TEXT, body TEXT NOT NULL,
   author_id INTEGER NOT NULL, parent_id INTEGER,
-  resolved INTEGER NOT NULL DEFAULT 0, resolved_at TEXT,
+  resolved INTEGER NOT NULL DEFAULT 0, resolved_at TEXT, resolved_by INTEGER,
   edited_at TEXT,
   created_at TEXT NOT NULL,
   FOREIGN KEY (dashboard_id) REFERENCES dashboards(id),
@@ -185,6 +185,8 @@ def init():
         c.execute("ALTER TABLE comments ADD COLUMN resolved_at TEXT")
     if kcols and "edited_at" not in kcols:
         c.execute("ALTER TABLE comments ADD COLUMN edited_at TEXT")
+    if kcols and "resolved_by" not in kcols:
+        c.execute("ALTER TABLE comments ADD COLUMN resolved_by INTEGER")
 
     ucols2 = {r["name"] for r in c.execute("PRAGMA table_info(users)")}
     if ucols2 and "gender" not in ucols2:
@@ -415,9 +417,10 @@ def reviewer_tags(uid):
                     AND k.created_at > ?)
                + (SELECT COUNT(*) FROM comments
                   WHERE dashboard_id=? AND author_id=? AND resolved=1
-                    AND resolved_at IS NOT NULL AND resolved_at > ?) n""",
+                    AND resolved_at IS NOT NULL AND resolved_at > ?
+                    AND resolved_by IS NOT NULL AND resolved_by <> ?) n""",
           (d["id"], uid, uid, v["last_at"], d["id"], uid,
-           v["last_at"])).fetchone()["n"]
+           v["last_at"], uid)).fetchone()["n"]
         if nr:
             out[d["id"]] = TAGS[0]
             continue
@@ -459,8 +462,11 @@ def list_page(user, rows, tags=None):
         # حين لا تعليقات — فتناقض «جاهزة للنشر» على البطاقة نفسها، والحالان
         # يجتمعان: لوحةٌ أُجيزت بلا ملاحظةٍ واحدة. ولا تُعرض عند الصفر، فالسطر
         # الأسفل يقول «0 تعليقاً» أصلاً.
-        badge = (f'<span class="pill open">{notes(op)} مفتوحة</span>' if op
-                 else '<span class="pill done">عولجت الملاحظات</span>' if n
+        owner = r["uploader_id"] == user["id"]
+        badge = (f'<span class="pill open">{notes(op)} مفتوحة</span>'
+                 if op and owner
+                 else '<span class="pill done">عولجت الملاحظات</span>'
+                 if n and not op and not owner
                  else '')
         cat = r["cat_name"] or "بلا تصنيف"
         st = derive(r["n_v"], r["n_pass"])
@@ -1177,8 +1183,9 @@ class H(BaseHTTPRequestHandler):
             c = db()
             c.execute("""UPDATE comments
                          SET resolved=1-resolved,
-                             resolved_at=CASE WHEN resolved=0 THEN ? END
-                         WHERE id=?""", (now(), cid))
+                             resolved_at=CASE WHEN resolved=0 THEN ? END,
+                             resolved_by=CASE WHEN resolved=0 THEN ? END
+                         WHERE id=?""", (now(), u["id"], cid))
             c.commit()
             r = c.execute("SELECT resolved FROM comments WHERE id=?", (cid,)).fetchone()
             c.close()
