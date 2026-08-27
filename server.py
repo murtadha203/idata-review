@@ -949,12 +949,17 @@ class H(BaseHTTPRequestHandler):
                                  WHERE dashboard_id=? AND sec_key=?""",
                               (new, did, old))
                 moved += r.rowcount
-            # وما بقي بلا مقابل
-            keys = set(mp.values())
+            # واليتيمُ من لا مِقبضَ له في الصفحة — لا من ليس في هذا الجسر
+            try:
+                with open(os.path.join(DASH_DIR, slug + ".html"),
+                          encoding="utf-8") as fh:
+                    page_keys = set(re.findall(r'data-sec="([^"]+)"', fh.read()))
+            except OSError:
+                page_keys = set()
             for r in c.execute("""SELECT sec_key, COUNT(*) n FROM comments
                                   WHERE dashboard_id=? GROUP BY sec_key""",
                                (did,)):
-                if r["sec_key"] not in keys:
+                if page_keys and r["sec_key"] not in page_keys:
                     untouched += r["n"]
             c.commit()
             c.close()
