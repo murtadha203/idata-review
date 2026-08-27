@@ -636,7 +636,7 @@
 
   function card(c, isRep) {
     const loc = locate(c);
-    const lost = !isRep && !loc.node;
+    const lost = !isRep && !loc.sec;
     const d = el("div", "rv-c" + (c.resolved ? " done" : "")
       + (isRep ? " rv-rep" : "") + (lost ? " lost" : ""));
     const where = c.part_label
@@ -722,7 +722,7 @@
     });
     by.forEach(cs => {
       const loc = locate(cs[0]);
-      const host = loc.node || loc.sec;
+      const host = loc.node || loc.sec;   // القسمُ يكفي إن تغيّر الاقتباس
       if (!host) return;
       const open = cs.filter(c => !c.resolved).length;
       if (host.tagName === "MARK") {
