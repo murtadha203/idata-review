@@ -37,6 +37,9 @@ body.rv-collapsed #rv-panel{display:none}
 .rv-c.done:hover{border-color:#3f9e6e}
 .rv-c .ok{font-size:10.5px;font-weight:700;background:#d6f2e2;color:#14603c;
   border-radius:4px;padding:1px 6px;margin-inline-start:6px}
+.rv-c .ed2{font-size:10.5px;color:var(--rv-mut);margin-inline-start:6px}
+.rv-c .acts button.dg{color:#b91c1c}
+.rv-c .acts button.dg:hover{background:#fee2e2}
 .rv-c .h{display:flex;align-items:center;gap:7px;margin-bottom:5px}
 .rv-c .au{font-weight:700;font-size:12.5px;color:var(--rv-navy)}
 .rv-c .dt{font-size:11px;color:var(--rv-mut);margin-inline-start:auto}

@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS comments (
   quote TEXT, body TEXT NOT NULL,
   author_id INTEGER NOT NULL, parent_id INTEGER,
   resolved INTEGER NOT NULL DEFAULT 0, resolved_at TEXT,
+  edited_at TEXT,
   created_at TEXT NOT NULL,
   FOREIGN KEY (dashboard_id) REFERENCES dashboards(id),
   FOREIGN KEY (author_id) REFERENCES users(id));
@@ -182,6 +183,8 @@ def init():
     kcols = {r["name"] for r in c.execute("PRAGMA table_info(comments)")}
     if kcols and "resolved_at" not in kcols:
         c.execute("ALTER TABLE comments ADD COLUMN resolved_at TEXT")
+    if kcols and "edited_at" not in kcols:
+        c.execute("ALTER TABLE comments ADD COLUMN edited_at TEXT")
 
     ucols2 = {r["name"] for r in c.execute("PRAGMA table_info(users)")}
     if ucols2 and "gender" not in ucols2:
@@ -1070,6 +1073,44 @@ class H(BaseHTTPRequestHandler):
             c.commit()
             c.close()
             return self.json({"status": st, "by": u["name"]})
+
+        # ── تحريرُ تعليقٍ وحذفُه ─────────────────────────────────────────
+        # **وصاحبُ الكلام وحدَه يملكه.** لا يُعدّل تعليقُ أحدٍ ولا يُحذف إلّا
+        # بيده — ولو كان الرافعُ صاحبَ اللوحة. وحذفُ اعتراضٍ لا يعجبك أسوأُ
+        # من الاعتراض نفسِه.
+        if re.fullmatch(r"/api/comments/\d+", path):
+            cid = int(path.rsplit("/", 1)[1])
+            b = self.body_json() or {}
+            c = db()
+            row = c.execute("SELECT * FROM comments WHERE id=?",
+                            (cid,)).fetchone()
+            if not row:
+                c.close()
+                return self.json({"error": "لا تعليقَ بهذا الرقم"}, 404)
+            if row["author_id"] != u["id"]:
+                c.close()
+                return self.json({"error": "التعليقُ ليس لك"}, 403)
+
+            if b.get("delete"):
+                # **والردودُ تذهب معه.** ردٌّ بلا ما يردّ عليه لغزٌ لا كلام،
+                # فيُقال عددُها قبل الحذف ويُحذف الجميعُ معاً.
+                kids = c.execute("SELECT COUNT(*) n FROM comments "
+                                 "WHERE parent_id=?", (cid,)).fetchone()["n"]
+                c.execute("DELETE FROM comments WHERE parent_id=?", (cid,))
+                c.execute("DELETE FROM comments WHERE id=?", (cid,))
+                c.commit()
+                c.close()
+                return self.json({"ok": True, "deleted": 1 + kids})
+
+            body = (b.get("body") or "").strip()
+            if not body:
+                c.close()
+                return self.json({"error": "النصُّ فارغ"}, 400)
+            c.execute("UPDATE comments SET body=?, edited_at=? WHERE id=?",
+                      (body[:4000], now(), cid))
+            c.commit()
+            c.close()
+            return self.json({"ok": True, "body": body[:4000]})
 
         if path.startswith("/api/comments/") and path.endswith("/resolve"):
             cid = path.split("/")[3]

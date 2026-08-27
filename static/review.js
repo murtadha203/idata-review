@@ -544,6 +544,38 @@
     };
   }
 
+  // ═══ تحريرُ التعليق وحذفُه ════════════════════════════════════════════
+  async function editCmt(c) {
+    const t = prompt("عدِّل نصَّ التعليق:", c.body);
+    if (t === null) return;
+    if (!t.trim()) { alert("النصُّ فارغ — لم يتغيّر شيء."); return; }
+    if (t.trim() === c.body) return;
+    try {
+      const r = await fetch(`${API}/${c.id}`, { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: t.trim() }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.error) throw new Error(j.error || "تعذّر التعديل");
+      await load();
+    } catch (e) { alert("لم يُعدَّل: " + e.message); }
+  }
+
+  /* **والردودُ تذهب مع أصلها.** ردٌّ بلا ما يردّ عليه لغزٌ لا كلام. */
+  async function delCmt(c) {
+    const kids = all.filter(x => x.parent_id === c.id).length;
+    if (!confirm("حذفٌ لا يُسترجَع.\n\n"
+        + (kids ? `وسيُحذف معه ${kids} ردّاً.\n\n` : "")
+        + `«${c.body.slice(0, 80)}»`)) return;
+    try {
+      const r = await fetch(`${API}/${c.id}`, { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delete: 1 }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.error) throw new Error(j.error || "تعذّر الحذف");
+      await load();
+    } catch (e) { alert("لم يُحذف: " + e.message); }
+  }
+
   // ═══ إيجاد الهدف من المرساة ══════════════════════════════════════════════
   /* يعيد العنصر الذي يشير إليه التعليق، أو null إن لم يعد موجوداً.
      ولا يُخمَّن بديلٌ عند الفقد — الصمت هنا أسوأ من الإعلان. */
@@ -613,6 +645,7 @@
     d.innerHTML =
       `<div class="h"><span class="au">${esc(c.author)}</span>` +
       `<span class="dt">${esc(stamp(c.created_at))}</span>` +
+      (c.edited_at ? `<span class="ed2">عُدّل</span>` : "") +
       (c.resolved ? `<span class="ok">عولج</span>` : "") + `</div>` +
       (isRep ? "" : `<div class="loc">${where}</div>`) +
       (lost ? `<div class="warn">⚠ ${esc(loc.why)} — التعليق محفوظ` +
@@ -621,13 +654,19 @@
       (c.quote ? `<div class="q">${esc(c.quote)}</div>` : "") +
       `<div class="b">${esc(c.body)}</div>` +
       `<div class="acts"><button data-a="reply">ردّ</button>` +
-      `<button data-a="resolve">${c.resolved ? "إعادة فتح" : "عولج"}</button></div>`;
+      `<button data-a="resolve">${c.resolved ? "إعادة فتح" : "عولج"}</button>` +
+      (c.author_id === RV.me.id
+        ? `<button data-a="edit">تعديل</button>` +
+          `<button data-a="del" class="dg">حذف</button>` : "") +
+      `</div>`;
     d.onclick = ev => {
       const a = ev.target.dataset ? ev.target.dataset.a : null;
       if (a === "reply") { ev.stopPropagation();
         return openEditor({ sec: loc.sec, part: c.part_key,
                             partLabel: c.part_label, parent: c.id }); }
       if (a === "resolve") { ev.stopPropagation(); return toggle(c); }
+      if (a === "edit") { ev.stopPropagation(); return editCmt(c); }
+      if (a === "del") { ev.stopPropagation(); return delCmt(c); }
       jump(loc);
     };
     return d;
