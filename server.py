@@ -391,6 +391,15 @@ TAGS = [("reply", "ردودٌ لك"), ("none", "لم تفتحه"),
         ("skim", "مررتَ سريعاً"), ("part", "لم تُكمله")]
 
 
+def owns(conn, uid, slug=None, did=None):
+    """أصاحبُ هذه اللوحة هو؟ — لا كلُّ من له دورُ رفع."""
+    r = (conn.execute("SELECT uploader_id FROM dashboards WHERE slug=?",
+                      (slug,)).fetchone() if slug else
+         conn.execute("SELECT uploader_id FROM dashboards WHERE id=?",
+                      (did,)).fetchone())
+    return bool(r) and r["uploader_id"] == uid
+
+
 def reviewer_tags(uid):
     """يردّ {رقم الداشبورد: (المفتاح، النصّ)} — أو لا شيءَ لمن أتمّه."""
     import digest
@@ -701,8 +710,8 @@ class H(BaseHTTPRequestHandler):
             # طبقة التعليق تُحقن، ولا يُمسّ شيءٌ من الصفحة نفسها
             ctx = {"slug": slug, "title": d["title"],
                    "status": d["status"] or "review",
-                   "me": {"id": u["id"], "name": u["name"],
-                          "role": u["role"]}}
+                   "me": {"id": u["id"], "name": u["name"], "role": u["role"],
+                          "owner": d["uploader_id"] == u["id"]}}
             inject = (f'<link rel="stylesheet" href="/static/review.css">'
                       f'<script>window.RV={json.dumps(ctx, ensure_ascii=False)};'
                       f'</script>'
@@ -735,7 +744,7 @@ class H(BaseHTTPRequestHandler):
             #
             # فالرافعُ يرى الجميع، وكلُّ من عداه يرى صفَّه وحدَه — فيبقى
             # سطرُ المراجع عن نفسه عاملاً بلا أن ينكشف غيرُه.
-            mine_only = u["role"] != "uploader"
+            mine_only = not owns(c, u["id"], did=d["id"])
             rows = c.execute("""
               SELECT us.id, us.name, us.role,
                      v.opens, v.first_at, v.last_at, v.manual,
@@ -910,6 +919,9 @@ class H(BaseHTTPRequestHandler):
             c = db()
             d = c.execute("SELECT * FROM dashboards WHERE slug=?",
                           (slug,)).fetchone()
+            if d and d["uploader_id"] != u["id"]:
+                c.close()
+                return self.json({"error": "اللوحةُ ليست لك"}, 403)
             try:
                 if not d:
                     raise RuntimeError("لا لوحةَ بهذا المعرّف.")
@@ -1004,11 +1016,14 @@ class H(BaseHTTPRequestHandler):
             if not isinstance(mp, dict) or not mp or not slug:
                 return self.json({"error": "جسرٌ فارغٌ أو غيرُ سليم"}, 400)
             c = db()
-            d = c.execute("SELECT id FROM dashboards WHERE slug=?",
-                          (slug,)).fetchone()
+            d = c.execute("SELECT id, uploader_id FROM dashboards "
+                          "WHERE slug=?", (slug,)).fetchone()
             if not d:
                 c.close()
                 return self.json({"error": "لا لوحةَ بهذا المعرّف."}, 404)
+            if d["uploader_id"] != u["id"]:
+                c.close()
+                return self.json({"error": "اللوحةُ ليست لك"}, 403)
             did = d["id"]
             moved, untouched = 0, 0
             for old, new in mp.items():
@@ -1046,6 +1061,9 @@ class H(BaseHTTPRequestHandler):
             if not d:
                 c.close()
                 return self.json({"error": "لا لوحةَ بهذا المعرّف."}, 404)
+            if d["uploader_id"] != u["id"]:
+                c.close()
+                return self.json({"error": "اللوحةُ ليست لك"}, 403)
             if (b.get("confirm") or "").strip() != (d["title"] or "").strip():
                 c.close()
                 return self.json({"error": "العنوانُ لا يطابق."}, 400)
@@ -1181,6 +1199,12 @@ class H(BaseHTTPRequestHandler):
         if path.startswith("/api/comments/") and path.endswith("/resolve"):
             cid = path.split("/")[3]
             c = db()
+            _d = c.execute("""SELECT d.uploader_id FROM dashboards d
+                              JOIN comments k ON k.dashboard_id=d.id
+                              WHERE k.id=?""", (cid,)).fetchone()
+            if not _d or _d["uploader_id"] != u["id"]:
+                c.close()
+                return self.json({"error": "اللوحةُ ليست لك"}, 403)
             c.execute("""UPDATE comments
                          SET resolved=1-resolved,
                              resolved_at=CASE WHEN resolved=0 THEN ? END,

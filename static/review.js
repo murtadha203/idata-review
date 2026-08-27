@@ -53,7 +53,7 @@
     /* التقييم للمراجع وحده — والرافع يرى النتيجة ولا يضعها. */
     const canRate = RV.me.role === "reviewer";
     /* والتحديثُ للرافع وحده — والمراجعُ يعلّق ولا يبدّل الصفحة. */
-    const canPush = RV.me.role === "uploader";
+    const canPush = !!RV.me.owner;
     bar.innerHTML = `<a href="/">← اللوحات</a>` +
       `<span class="t">${esc(document.title.replace(/^معاينة — /, ""))}</span>` +
       `<span class="st st-${esc(RV.status)}" id="rv-st">` +
@@ -654,7 +654,9 @@
       (c.quote ? `<div class="q">${esc(c.quote)}</div>` : "") +
       `<div class="b">${esc(c.body)}</div>` +
       `<div class="acts"><button data-a="reply">ردّ</button>` +
-      `<button data-a="resolve">${c.resolved ? "إعادة فتح" : "عولج"}</button>` +
+      (RV.me.owner
+        ? `<button data-a="resolve">` +
+          `${c.resolved ? "إعادة فتح" : "عولج"}</button>` : "") +
       (c.author_id === RV.me.id
         ? `<button data-a="edit">تعديل</button>` +
           `<button data-a="del" class="dg">حذف</button>` : "") +
