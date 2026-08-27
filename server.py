@@ -379,7 +379,62 @@ def login_page(bad=False):
 </div></div>""")
 
 
-def list_page(user, rows):
+# ── وسمُ المراجع على كلِّ داشبورد ─────────────────────────────────────────
+# **وسمٌ واحدٌ لا أربعة.** أربعةُ أوسمةٍ على بطاقةٍ واحدةٍ تصير زينةً لا
+# إشارة، فيُعرض أعلاها أولويّةً وحدَه.
+#
+# **والترتيبُ ترتيبُ إلحاح**: من ينتظرك ردُّه أولى ممّن لم تبدأه، ومن لم
+# تبدأه أولى ممّن بدأتَه. والأخيرُ «لم تُكمله» — وهو أهونُها.
+TAGS = [("reply", "ردودٌ لك"), ("none", "لم تفتحه"),
+        ("skim", "مررتَ سريعاً"), ("part", "لم تُكمله")]
+
+
+def reviewer_tags(uid):
+    """يردّ {رقم الداشبورد: (المفتاح، النصّ)} — أو لا شيءَ لمن أتمّه."""
+    import digest
+    c = db()
+    out = {}
+    for d in c.execute("SELECT id, slug FROM dashboards WHERE status='review'"):
+        try:
+            with open(os.path.join(DASH_DIR, d["slug"] + ".html"),
+                      encoding="utf-8") as fh:
+                total = len(set(re.findall(r'data-sec="([^"]+)"', fh.read())))
+        except OSError:
+            total = 0
+        v = c.execute("""SELECT opens, last_at FROM views
+                         WHERE dashboard_id=? AND user_id=?""",
+                      (d["id"], uid)).fetchone()
+        if not v or not v["opens"]:
+            out[d["id"]] = TAGS[1]
+            continue
+        # ردودٌ ومعالجاتٌ بعد آخر زيارة
+        nr = c.execute("""
+          SELECT (SELECT COUNT(*) FROM comments k JOIN comments p
+                    ON p.id=k.parent_id
+                  WHERE k.dashboard_id=? AND p.author_id=? AND k.author_id<>?
+                    AND k.created_at > ?)
+               + (SELECT COUNT(*) FROM comments
+                  WHERE dashboard_id=? AND author_id=? AND resolved=1
+                    AND resolved_at IS NOT NULL AND resolved_at > ?) n""",
+          (d["id"], uid, uid, v["last_at"], d["id"], uid,
+           v["last_at"])).fetchone()["n"]
+        if nr:
+            out[d["id"]] = TAGS[0]
+            continue
+        g = c.execute("""SELECT COUNT(*) n, COALESCE(SUM(ms),0) ms
+                         FROM section_views
+                         WHERE dashboard_id=? AND user_id=?""",
+                      (d["id"], uid)).fetchone()
+        if g["ms"] < digest.min_ms(total):
+            out[d["id"]] = TAGS[2]
+        elif total and g["n"] < total:
+            out[d["id"]] = TAGS[3]
+    c.close()
+    return out
+
+
+def list_page(user, rows, tags=None):
+    tags = tags or {}
     can_add = user["role"] == "uploader"
 
     cats = {}
@@ -414,11 +469,14 @@ def list_page(user, rows):
               if r["avg_score"] else '')
         vote = (f'<span class="vote">{r["n_pass"]} من {r["n_v"]} أجاز</span>'
                 if r["n_v"] else '<span class="vote dim">بانتظار التقييم</span>')
+        tg = tags.get(r["id"])
+        tag = (f'<span class="rtag rt-{tg[0]}">{esc(tg[1])}</span>'
+               if tg else "")
         cards.append(f"""<a class="dash {st_cls}" href="/d/{esc(r['slug'])}"
      data-cat="{esc(cat)}" data-n="{n}" data-open="{op}" data-st="{st}"
      data-score="{r['avg_score'] or 0}"
      data-up="{esc(r['updated_at'] or '')}" data-t="{esc(r['title'])}">
-  <div class="dash-h"><span class="cat">{esc(cat)}</span>{badge}</div>
+  <div class="dash-h"><span class="cat">{esc(cat)}</span>{tag}{badge}</div>
   <div class="row2"><span class="st {st_cls}">{esc(st_txt)}</span>
      {sc}</div>
   <div class="dash-t">{esc(r['title'])}</div>
@@ -620,7 +678,9 @@ class H(BaseHTTPRequestHandler):
               FROM dashboards d LEFT JOIN users us ON us.id=d.uploader_id
               ORDER BY n_comments ASC, d.updated_at DESC""").fetchall()
             c.close()
-            return self.send(list_page(u, rows))
+            tags = (reviewer_tags(u["id"]) if u["role"] == "reviewer"
+                    else {})
+            return self.send(list_page(u, rows, tags))
 
         if path.startswith("/d/"):
             slug = path[3:]

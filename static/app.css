@@ -144,3 +144,11 @@ h1.pg{font-size:24px;color:var(--navy);margin:6px 0 6px}
 .or::before{inset-inline-start:0}.or::after{inset-inline-end:0}
 .brand a{color:inherit}
 .p-h b.i{font-weight:600;color:#334155;display:inline}
+
+/* وسمُ المراجع على البطاقة — واحدٌ بحسب الأولوية */
+.rtag{font-size:11px;font-weight:700;border-radius:5px;padding:2px 8px;
+  margin-inline-start:6px;white-space:nowrap}
+.rt-reply{background:#fee2e2;color:#991b1b}
+.rt-none{background:#e0e7ff;color:#3730a3}
+.rt-skim{background:#fef3c7;color:#78350f}
+.rt-part{background:#e5e7eb;color:#374151}
