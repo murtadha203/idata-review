@@ -71,7 +71,9 @@
       (canRate ? `<span class="mine" id="rv-mine" title="يراه الرافعُ أيضاً">`
                  + `</span>` : "") +
       `<span class="me">${esc(RV.me.name)}</span>` +
-      `<button id="rv-toggle">إخفاء اللوح</button>`;
+      /* **والزرُّ يسمّي ما يفعله.** «اللوح» وعاءٌ لا مضمون، والذي
+         يُخفى هو التعليقات — وترويسةُ اللوح نفسِها تقول «التعليقات». */
+      `<button id="rv-toggle">إخفاء التعليقات</button>`;
     document.body.appendChild(bar);
     if (canPush) { wirePush(); wireDelete(); }
 
@@ -110,7 +112,7 @@
     $("#rv-toggle").onclick = () => {
       document.body.classList.toggle("rv-collapsed");
       $("#rv-toggle").textContent = document.body.classList.contains("rv-collapsed")
-        ? "إظهار اللوح" : "إخفاء اللوح";
+        ? "إظهار التعليقات" : "إخفاء التعليقات";
       reflow();
     };
     if (canRate) {
@@ -532,7 +534,7 @@
               `تعليقاتٌ بقيت في مواضعها: ${j.kept}
 ` +
               (j.lost ? `تعليقاتٌ فقدت موضعها: ${j.lost} — ` +
-                        `تظهر في اللوح موسومةً «القسم لم يعد موجوداً»
+                        `تظهر في قائمة التعليقات موسومةً «القسم لم يعد موجوداً»
 ` : "") +
               `
 وعادت اللوحةُ إلى «قيد المراجعة».`);
