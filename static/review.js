@@ -224,8 +224,16 @@
     const s = window.getSelection();
     if (!s || s.isCollapsed) return;
     const q = norm(s.toString());
-    // حدٌّ أدنى: نقرةٌ مزدوجةٌ عابرة أو تحديدٌ بالخطأ لا يفتح محرّراً.
-    if (q.length < 6) return;
+    /* حدٌّ أدنى: نقرةٌ مزدوجةٌ عابرة أو تحديدٌ بالخطأ لا يفتح محرّراً.
+
+       **والرقمُ قصيرٌ بطبيعته.** كان الحدُّ ستّةَ محارفَ للجميع، فسقط
+       «82%» و«35%» و«2.65» — وهي أكثرُ ما يُعلَّق عليه في لوحة بيانات.
+       فالطولُ وحدَه لا يفرّق بين العابر والمقصود.
+
+       فيُشترط للقصير أن يحمل رقماً: تحديدُ «82%» مقصودٌ دائماً،
+       وتحديدُ كلمةٍ بنقرةٍ مزدوجةٍ يبقى محجوباً كما كان. */
+    if (q.length < 2) return;
+    if (q.length < 6 && !/[0-9٠-٩]/.test(q)) return;
     if (document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName))
       return;
     const n = s.anchorNode.nodeType === 1 ? s.anchorNode : s.anchorNode.parentElement;
