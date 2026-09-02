@@ -445,6 +445,26 @@ def reviewer_tags(uid):
     return out
 
 
+# ── الملاحظةُ المفتوحة ───────────────────────────────────────────────────
+# **سلسلةٌ لا سطر.** كان العدُّ يحسب كلَّ صفٍّ `resolved=0`، فتعليقُ المراجع
+# واحدةٌ وردُّ صاحبِ اللوحةِ عليه ثانية — فيصحّح الناشرُ فيرتفع العدّاد.
+#
+# **وتُغلَق بصاحبِ اللوحةِ وحدَه**: ردُّه أو زرُّ «عولج». وردُّ مراجعٍ آخر
+# ليس إغلاقاً، وإن رُدَّ بعده فُتحت من جديد — فالعبرةُ بآخرِ ردّ.
+LAST_AUTHOR = """COALESCE((SELECT r.author_id FROM comments r
+                            WHERE r.parent_id=k.id
+                            ORDER BY r.created_at DESC, r.id DESC LIMIT 1),
+                          k.author_id)"""
+
+OPEN_ONE = f"""k.parent_id IS NULL AND k.resolved=0
+               AND {LAST_AUTHOR} <> {{owner}}"""
+
+
+def open_sql(owner="d.uploader_id"):
+    """شرطُ «مفتوحة» لصفٍّ اسمُه `k`، ومالكُ اللوحةِ `owner`."""
+    return OPEN_ONE.format(owner=owner)
+
+
 def list_page(user, rows, tags=None):
     tags = tags or {}
     can_add = user["role"] == "uploader"
@@ -457,6 +477,11 @@ def list_page(user, rows, tags=None):
     for r in rows:
         k = derive(r["n_v"], r["n_pass"])
         sts[k] = sts.get(k, 0) + 1
+    # **والناشرُ بُعدٌ ثالث.** يُحصى بالاسمِ لا بالرقم، فالرقاقةُ تُقرأ.
+    ups = {}
+    for r in rows:
+        k = r["uploader"] or "—"
+        ups[k] = ups.get(k, 0) + 1
 
     chips = [f'<button class="chip" data-cat="">كلّ التصنيفات '
              f'<i>{len(rows)}</i></button>']
@@ -490,7 +515,8 @@ def list_page(user, rows, tags=None):
         cards.append(f"""<a class="dash {st_cls}" href="/d/{esc(r['slug'])}"
      data-cat="{esc(cat)}" data-n="{n}" data-open="{op}" data-st="{st}"
      data-score="{r['avg_score'] or 0}"
-     data-up="{esc(r['updated_at'] or '')}" data-t="{esc(r['title'])}">
+     data-up="{esc(r['updated_at'] or '')}" data-t="{esc(r['title'])}"
+     data-uploader="{esc(r['uploader'] or '—')}">
   <div class="dash-h"><span class="cat">{esc(cat)}</span>{tag}{badge}</div>
   <div class="row2"><span class="st {st_cls}">{esc(st_txt)}</span>
      {sc}</div>
@@ -502,6 +528,15 @@ def list_page(user, rows, tags=None):
 
     add = ('<a class="addbtn" href="/new">+ رفع لوحة للمراجعة</a>'
            if can_add else "")
+
+    # **ولا رقاقةَ ناشرٍ إن كان واحداً**، فهي حينئذٍ لا تفرّق شيئاً.
+    up_chips = ""
+    if len(ups) > 1:
+        mine = user["name"]
+        up_chips = ('<span class="sep"></span>' + "".join(
+            f'<button class="chip up-chip" data-uploader="{esc(k)}">'
+            f'{esc("لوحاتي" if k == mine else k)} <i>{v}</i></button>'
+            for k, v in sorted(ups.items(), key=lambda t: -t[1])))
 
     boards = plural(len(rows), "لوحة واحدة", "لوحتان", "لوحات", "لوحة") or "لا لوحات"
     tot = sum(r["n_comments"] for r in rows)
@@ -522,7 +557,8 @@ def list_page(user, rows, tags=None):
       <span class="sep"></span>
       {''.join(f'<button class="chip st-chip" data-st="{k}">'
                f'{STATUS[k][0].split(" — ")[0]} <i>{v}</i></button>'
-               for k, v in sorted(sts.items()))}</div>
+               for k, v in sorted(sts.items()))}
+      {up_chips}</div>
     <div class="tools">
       <input id="q" placeholder="بحث…" autocomplete="off">
       <select id="sort">
@@ -682,9 +718,10 @@ class H(BaseHTTPRequestHandler):
             c = db()
             rows = c.execute("""
               SELECT d.*, us.name AS uploader,
-                (SELECT COUNT(*) FROM comments k WHERE k.dashboard_id=d.id) n_comments,
                 (SELECT COUNT(*) FROM comments k WHERE k.dashboard_id=d.id
-                   AND k.resolved=0) n_open,
+                   AND k.parent_id IS NULL) n_comments,
+                (SELECT COUNT(*) FROM comments k WHERE k.dashboard_id=d.id
+                   AND """ + open_sql() + """) n_open,
                 (SELECT COUNT(*) FROM verdicts v WHERE v.dashboard_id=d.id) n_v,
                 (SELECT COUNT(*) FROM verdicts v WHERE v.dashboard_id=d.id
                    AND v.passed=1) n_pass,
@@ -809,8 +846,11 @@ class H(BaseHTTPRequestHandler):
         if path == "/api/comments":
             slug = q.get("d", [""])[0]
             c = db()
+            # **والحكمُ يُحسب هنا لا في المتصفّح**، فلا يفترق تعريفان.
             rows = c.execute("""
-              SELECT k.*, us.name AS author, us.role AS author_role
+              SELECT k.*, us.name AS author, us.role AS author_role,
+                     CASE WHEN """ + open_sql() + """ THEN 1 ELSE 0 END
+                       AS is_open
               FROM comments k JOIN users us ON us.id=k.author_id
               JOIN dashboards d ON d.id=k.dashboard_id
               WHERE d.slug=? ORDER BY k.created_at""", (slug,)).fetchall()

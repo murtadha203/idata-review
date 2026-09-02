@@ -17,15 +17,18 @@
   const none = document.getElementById("none");
   const catChips = [...document.querySelectorAll(".chip[data-cat]")];
   const stChips = [...document.querySelectorAll(".chip[data-st]")];
+  const upChips = [...document.querySelectorAll(".chip[data-uploader]")];
   const KEY = "rv-list-prefs";
 
-  let cat = "", st = "", term = "", how = "fewest";
+  let cat = "", st = "", up = "", term = "", how = "fewest";
   try {
     const p = JSON.parse(localStorage.getItem(KEY) || "{}");
-    cat = p.cat || ""; st = p.st || ""; how = p.how || "fewest";
+    cat = p.cat || ""; st = p.st || ""; up = p.up || "";
+    how = p.how || "fewest";
   } catch (e) {}
   if (!catChips.some(c => c.dataset.cat === cat)) cat = "";
   if (!stChips.some(c => c.dataset.st === st)) st = "";
+  if (!upChips.some(c => c.dataset.uploader === up)) up = "";
   sortSel.value = how;
 
   const num = (e, k) => parseFloat(e.dataset[k] || "0") || 0;
@@ -45,6 +48,8 @@
   function paintChips() {
     catChips.forEach(c => c.classList.toggle("on", c.dataset.cat === cat));
     stChips.forEach(c => c.classList.toggle("on", c.dataset.st === st));
+    upChips.forEach(c => c.classList.toggle("on",
+      c.dataset.uploader === up));
   }
 
   function apply() {
@@ -52,6 +57,7 @@
     cards.forEach(c => {
       const ok = (!cat || c.dataset.cat === cat)
         && (!st || c.dataset.st === st)
+        && (!up || c.dataset.uploader === up)
         && (!term || (c.dataset.t || "").toLowerCase().includes(term)
                   || (c.dataset.cat || "").toLowerCase().includes(term));
       c.hidden = !ok;
@@ -60,7 +66,7 @@
     [...cards].sort(CMP[how] || CMP.fewest).forEach(c => grid.appendChild(c));
     none.hidden = shown > 0;
     paintChips();
-    try { localStorage.setItem(KEY, JSON.stringify({ cat, st, how })); }
+    try { localStorage.setItem(KEY, JSON.stringify({ cat, st, up, how })); }
     catch (e) {}
   }
 
@@ -68,6 +74,10 @@
   // رقاقةُ الحال تُطفأ بضغطها ثانيةً — فلا يحتاج المستخدم رقاقةَ «كلّ الحالات».
   stChips.forEach(c => c.onclick = () => {
     st = (st === c.dataset.st) ? "" : c.dataset.st; apply();
+  });
+  // ورقاقةُ الناشرِ تُطفأ بضغطها ثانيةً كرقاقةِ الحال.
+  upChips.forEach(c => c.onclick = () => {
+    up = (up === c.dataset.uploader) ? "" : c.dataset.uploader; apply();
   });
   q.oninput = () => { term = q.value.trim().toLowerCase(); apply(); };
   sortSel.onchange = () => { how = sortSel.value; apply(); };

@@ -635,7 +635,11 @@
 
   // ═══ العرض ══════════════════════════════════════════════════════════════
   const visible = () => all.filter(c => filter === "all" ? true
-    : filter === "mine" ? c.author_id === RV.me.id : true);
+    : filter === "mine" ? c.author_id === RV.me.id
+    : filter === "open" ? (c.is_open || openRoot(c)) : true);
+  /* وردُّ السلسلةِ المفتوحةِ يظهر معها، وإلّا بدا الردُّ بلا ما يردّ عليه */
+  const openRoot = c => !!c.parent_id
+    && all.some(r => r.id === c.parent_id && r.is_open);
 
   /* «2026-08-26T19:14:02+00:00» ← «08-26 · 19:14» */
   function stamp(t) {
@@ -734,7 +738,10 @@
       const loc = locate(cs[0]);
       const host = loc.node || loc.sec;   // القسمُ يكفي إن تغيّر الاقتباس
       if (!host) return;
-      const open = cs.filter(c => !c.resolved).length;
+      /* **والمفتوحُ ما يقوله الخادم.** «مفتوحة» ليست `!resolved`:
+         السلسلةُ تُغلَق بردّ صاحبِ اللوحةِ أو بزرّ «عولج»، وتُفتح إن
+         رُدَّ بعده. والحسابُ في الخادم كي لا يفترق تعريفان. */
+      const open = cs.filter(c => c.is_open).length;
       if (host.tagName === "MARK") {
         host.classList.add("on", open ? "open" : "done");
         host.title = cs.length + " تعليقاً";
