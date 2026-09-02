@@ -516,36 +516,57 @@
 
      **والتعليقاتُ تبقى، وما فقد مرساتَه يُقال عدده.** لا يُخفى ولا يُخمَّن
      له بديل: الصفحةُ الجديدة قد لا تحمل قسماً كان يحمل تعليقاً، فيُعلَن. */
+  /* **وتمييزُ العددِ عربيّ.** واحدٌ يُفرد، واثنان مثنّى، و3–10 جمعٌ
+     مجرور، وما فوقها مفردٌ منصوب. والخادمُ يفعلها في `notes()`. */
+  const notes = n => n === 1 ? "تعليقٌ واحد" : n === 2 ? "تعليقان"
+    : (n >= 3 && n <= 10) ? `${n} تعليقات` : `${n} تعليقاً`;
+
   function wirePush() {
     const btn = $("#rv-push"), inp = $("#rv-file");
     btn.onclick = () => inp.click();
+
+    /* **ولا يُسأل إلّا حيث يقع الضرر.** الخادمُ يقيس الأثرَ ولا يكتب،
+       فإن ردَّ `needs_confirm` سُئل الرافعُ بعددٍ حقيقيّ لا باحتمال.
+       وإن لم يردّه مضى الرفعُ بهدوء. */
+    const send = async (f, confirmed) => {
+      const fd = new FormData();
+      fd.append("slug", RV.slug);
+      fd.append("file", f, f.name);
+      if (confirmed) fd.append("confirm", "1");
+      const r = await fetch("/replace", { method: "POST", body: fd });
+      const j2 = await r.json().catch(() => ({}));
+      if (!r.ok || j2.error) throw new Error(j2.error || "تعذّر الرفع");
+      return j2;
+    };
+
     inp.onchange = async () => {
       const f = inp.files && inp.files[0];
       if (!f) return;
-      if (!confirm(`استبدالُ صفحة هذه اللوحة بـ«${f.name}»؟
-
-` +
-                   `التعليقاتُ تبقى، وتعود اللوحةُ إلى «قيد المراجعة» ` +
-                   `وتُمسح التقييمات.`)) { inp.value = ""; return; }
       const was = btn.textContent;
-      btn.disabled = true; btn.textContent = "جارٍ الرفع…";
+      btn.disabled = true; btn.textContent = "جارٍ الفحص…";
       try {
-        const fd = new FormData();
-        fd.append("slug", RV.slug);
-        fd.append("file", f, f.name);
-        const r = await fetch("/replace", { method: "POST", body: fd });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || j.error) throw new Error(j.error || "تعذّر الرفع");
-        alert(`حُدِّثت الصفحة.
-
-` +
-              `تعليقاتٌ بقيت في مواضعها: ${j.kept}
-` +
-              (j.lost ? `تعليقاتٌ فقدت موضعها: ${j.lost} — ` +
-                        `تظهر في قائمة التعليقات موسومةً «القسم لم يعد موجوداً»
-` : "") +
-              `
-وعادت اللوحةُ إلى «قيد المراجعة».`);
+        let j2 = await send(f, false);
+        if (j2.needs_confirm) {
+          const go = confirm(
+            `${notes(j2.lost)} سيفقد موضعَه في الصفحة الجديدة`
+            + (j2.kept ? `، و${notes(j2.kept)} سيبقى في مكانه` : "")
+            + `.\n\n`
+            + `يبقى النصُّ محفوظاً وموسوماً «القسم لم يعد موجوداً».\n\n`
+            + `أأمضي؟`);
+          if (!go) {
+            btn.disabled = false; btn.textContent = was; inp.value = "";
+            return;
+          }
+          btn.textContent = "جارٍ الرفع…";
+          j2 = await send(f, true);
+        }
+        /* **ولا يُسرد صفر.** «بقيت في مواضعها: 0» جملةٌ لا تقول شيئاً. */
+        alert(j2.lost
+          ? `حُدِّثت الصفحة. ${notes(j2.lost)} فقد موضعَه`
+            + (j2.kept ? `، و${notes(j2.kept)} بقي في مكانه` : "") + `.`
+              + `\n\nوعادت اللوحةُ إلى «قيد المراجعة».`
+          : `حُدِّثت الصفحة، ولم يتغيّر موضعُ أيّ تعليق.`
+              + `\n\nوعادت اللوحةُ إلى «قيد المراجعة».`);
         location.reload();
       } catch (e) {
         alert("لم يُحدَّث الملفّ: " + e.message);
@@ -555,19 +576,46 @@
   }
 
   // ═══ تحريرُ التعليق وحذفُه ════════════════════════════════════════════
-  async function editCmt(c) {
-    const t = prompt("عدِّل نصَّ التعليق:", c.body);
-    if (t === null) return;
-    if (!t.trim()) { alert("النصُّ فارغ — لم يتغيّر شيء."); return; }
-    if (t.trim() === c.body) return;
-    try {
-      const r = await fetch(`${API}/${c.id}`, { method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: t.trim() }) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || j.error) throw new Error(j.error || "تعذّر التعديل");
-      await load();
-    } catch (e) { alert("لم يُعدَّل: " + e.message); }
+  /* **والتعديلُ في مكانه.** كان `prompt()` يقتلع القارئَ من الصفحة
+     ويعطيه سطراً واحداً بلا الاقتباسِ ولا ما حوله. فيُفتح حقلٌ في
+     البطاقةِ نفسِها، ويُغلق بـEscape ويُرسل بـCtrl+Enter. */
+  function editCmt(c, card) {
+    if (!card || card.querySelector(".rv-edit")) return;
+    const body = card.querySelector(".b");
+    if (!body) return;
+    const box = el("div", "rv-edit");
+    box.innerHTML =
+      `<textarea class="rv-edit-t" rows="3"></textarea>` +
+      `<div class="rv-edit-a"><button class="save">حفظ</button>` +
+      `<button class="cancel">إلغاء</button></div>`;
+    const ta = box.querySelector("textarea");
+    ta.value = c.body;
+    body.style.display = "none";
+    body.after(box);
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+
+    const close = () => { box.remove(); body.style.display = ""; };
+    const save = async () => {
+      const t = ta.value.trim();
+      if (!t || t === c.body) return close();
+      try {
+        const r = await fetch(`${API}/${c.id}`, { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body: t }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) throw new Error(j.error || "تعذّر التعديل");
+        await load();
+      } catch (e) { alert("لم يُعدَّل: " + e.message); close(); }
+    };
+    box.querySelector(".save").onclick = ev => { ev.stopPropagation(); save(); };
+    box.querySelector(".cancel").onclick = ev => {
+      ev.stopPropagation(); close(); };
+    box.onclick = ev => ev.stopPropagation();
+    ta.onkeydown = ev => {
+      if (ev.key === "Escape") { ev.stopPropagation(); close(); }
+      if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) save();
+    };
   }
 
   /* **والردودُ تذهب مع أصلها.** ردٌّ بلا ما يردّ عليه لغزٌ لا كلام. */
@@ -681,7 +729,7 @@
         return openEditor({ sec: loc.sec, part: c.part_key,
                             partLabel: c.part_label, parent: c.id }); }
       if (a === "resolve") { ev.stopPropagation(); return toggle(c); }
-      if (a === "edit") { ev.stopPropagation(); return editCmt(c); }
+      if (a === "edit") { ev.stopPropagation(); return editCmt(c, d); }
       if (a === "del") { ev.stopPropagation(); return delCmt(c); }
       jump(loc);
     };

@@ -974,6 +974,21 @@ class H(BaseHTTPRequestHandler):
                 c.close()
                 return self.json({"error": str(e)[-300:]}, 400)
 
+            # **والأثرُ يُقاس قبل أن يقع.** كان يُكتب الملفُّ ثمّ يُقال كم
+            # تعليقاً فقد مرساتَه — وقد فقدها ولا رجعة. فيُحسب أوّلاً من
+            # الصفحة المرفوعة، وإن كان فيه فقدٌ ولم يُؤذَن رُدَّ الطلبُ
+            # بلا أن تُمسّ اللوحة.
+            keys = set(re.findall(r'data-sec="([^"]+)"', page))
+            rows = c.execute("""SELECT sec_key, COUNT(*) n FROM comments
+                                WHERE dashboard_id=? AND parent_id IS NULL
+                                GROUP BY sec_key""", (d["id"],)).fetchall()
+            kept = sum(r["n"] for r in rows if r["sec_key"] in keys)
+            lost = sum(r["n"] for r in rows if r["sec_key"] not in keys)
+            if lost and not fields.get("confirm"):
+                c.close()
+                return self.json({"needs_confirm": True,
+                                  "kept": kept, "lost": lost})
+
             # **ولا يُكتب فوق الملفّ إلّا بعد أن يُقرأ الجديدُ كلُّه.** كتابةٌ
             # تفشل في منتصفها تترك اللوحةَ بلا صفحة، والتعليقاتُ عليها.
             with open(os.path.join(DASH_DIR, slug + ".html"), "w",
@@ -987,14 +1002,6 @@ class H(BaseHTTPRequestHandler):
                       (now(), d["id"]))
             c.execute("DELETE FROM verdicts WHERE dashboard_id=?", (d["id"],))
 
-            # وكم تعليقاً فقد مرساتَه؟ يُحسب بمقارنة `sec_key` بما في الصفحة
-            # الجديدة، **ويُقال للرافع صراحةً** بدل أن يكتشفه بالتصفّح.
-            keys = set(re.findall(r'data-sec="([^"]+)"', page))
-            rows = c.execute("""SELECT sec_key, COUNT(*) n FROM comments
-                                WHERE dashboard_id=? GROUP BY sec_key""",
-                             (d["id"],)).fetchall()
-            kept = sum(r["n"] for r in rows if r["sec_key"] in keys)
-            lost = sum(r["n"] for r in rows if r["sec_key"] not in keys)
             c.commit()
             c.close()
             return self.json({"ok": True, "slug": slug,

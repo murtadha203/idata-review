@@ -218,3 +218,19 @@ body.rv-collapsed #rv-rate-box{inset-inline-start:16px}
 .others .pz.y{background:#dcfce7;color:#166534}
 .others .pz.n{background:#fee2e2;color:#991b1b}
 .others .nt{color:#475569;margin-top:5px;white-space:pre-wrap}
+
+/* ── تحريرُ التعليقِ في مكانه ─────────────────────────────────────────
+   **ولا نافذةَ منبثقة.** `prompt()` يعطي سطراً بلا الاقتباسِ ولا ما
+   حوله، والمعلّقُ يحتاج أن يرى ما يعدّله في سياقه. */
+.rv-edit{margin:6px 0 2px}
+.rv-edit-t{width:100%;box-sizing:border-box;font:inherit;font-size:13px;
+  line-height:1.6;padding:8px 10px;border:1.5px solid var(--blue,#2352FF);
+  border-radius:8px;background:#fff;color:inherit;resize:vertical}
+.rv-edit-t:focus{outline:2px solid rgba(35,82,255,.25);outline-offset:1px}
+.rv-edit-a{display:flex;gap:6px;margin-top:6px}
+.rv-edit-a button{font:inherit;font-size:12px;font-weight:700;
+  padding:5px 12px;border-radius:7px;cursor:pointer;border:1px solid}
+.rv-edit-a .save{background:var(--blue,#2352FF);border-color:var(--blue,#2352FF);
+  color:#fff}
+.rv-edit-a .cancel{background:#fff;border-color:#dfe3ea;color:#5b6472}
+.rv-edit-a .cancel:hover{border-color:#9aa3b2;color:#16202e}
