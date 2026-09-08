@@ -347,9 +347,15 @@
 
   function startTracking() {
     TRACK.on = isOn();
+    /* **وعددُ المراسي يُرسَل من هنا لا من الخادم.** الصفحةُ التي
+       تبني نفسَها بجافاسكربت لا يُقرأ عددُ أقسامها من ملفّها، والمتصفّحُ
+       يعرفه بعد `autoAnchor()`. فيُرسَل مرّةً مع الفتح، ويأخذ الخادمُ
+       الأكبرَ فلا يتذبذب المقام. */
     fetch("/api/seen", { method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slug: RV.slug, open: 1 }) }).catch(() => {});
+      body: JSON.stringify({ slug: RV.slug, open: 1,
+        nsecs: document.querySelectorAll("[data-sec]").length })
+    }).catch(() => {});
 
     const io = new IntersectionObserver(ents => {
       const t = performance.now();

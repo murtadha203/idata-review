@@ -202,6 +202,7 @@ def init():
     have = {(r["username"] or "").lower(): r["id"]
             for r in c.execute("SELECT id, username FROM users")}
     want = {t[0].lower() for t in TEAM}
+    migrate_n_secs(c)
     for un, name, role, _mail, gen in TEAM:
         k = un.lower()
         if k in have:
@@ -391,6 +392,25 @@ TAGS = [("reply", "ردودٌ لك"), ("none", "لم تفتحه"),
         ("skim", "مررتَ سريعاً"), ("part", "لم تُكمله")]
 
 
+def migrate_n_secs(conn):
+    """عمودُ عددِ المراسي — يُضاف مرّةً ويُتجاهَل بعدها.
+
+    🔴 **ولوحةُ يوسفَ تبني نفسَها بجافاسكربت.** ملفُّها ثمانون كيلوبايت
+    فيها صفرُ `section` وصفرُ `h1` وصفرُ `svg`، والجسمُ كلُّه يُركَّب عند
+    العرض. فعدُّ المراسي من الملفِّ يرجع صفراً وهو ليس صفرا: `review.js`
+    يشتقّ المراسيَ من الشجرةِ المعروضةِ لا من الملفّ، فالتعليقُ يعمل
+    عندها بلا قيد.
+
+    **والحلُّ ألّا يُطلَب من الرافعِ شيء.** المتصفّحُ يعرف العددَ بعد
+    `autoAnchor()`، فيُرسله مرّةً مع أوّلِ نداءٍ ويُحفظ هنا. فما يُعدُّ
+    هو ما رآه القارئُ فعلا، لا ما استطاع الخادمُ قراءتَه.
+    """
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(dashboards)")]
+    if "n_secs" not in cols:
+        conn.execute("ALTER TABLE dashboards ADD COLUMN n_secs INTEGER")
+        conn.commit()
+
+
 def owns(conn, uid, slug=None, did=None):
     """أصاحبُ هذه اللوحة هو؟ — لا كلُّ من له دورُ رفع."""
     r = (conn.execute("SELECT uploader_id FROM dashboards WHERE slug=?",
@@ -424,8 +444,9 @@ def reach_rows():
     # للمراجعةِ أصلاً.** لا `data-sec` فيها، فلا يُعلَّق على موضعٍ منها
     # ولا تُسجَّل مشاهدةُ قسم. وسكوتُ الشاشةِ عنها يجعلها تقول «كلُّ
     # المحتوى لفلان»، وهي إنّما تقول «كلُّ المحتوى **القابلِ للمراجعة**».
-    keys, per_up, blind = {}, {}, {}
-    for d in c.execute("SELECT id, slug, uploader_id FROM dashboards"):
+    keys, cnt, per_up, blind = {}, {}, {}, {}
+    for d in c.execute("SELECT id, slug, uploader_id, n_secs "
+                       "FROM dashboards"):
         try:
             with open(os.path.join(DASH_DIR, d["slug"] + ".html"),
                       encoding="utf-8") as fh:
@@ -433,17 +454,22 @@ def reach_rows():
         except OSError:
             ks = set()
         keys[d["id"]] = ks
-        per_up[d["uploader_id"]] = per_up.get(d["uploader_id"], 0) + len(ks)
-        if not ks:
+        # **والمقامُ أكبرُ العددين**: ما في الملفّ، وما أبلغ عنه المتصفّح
+        # بعد اشتقاقِ المراسي. فلوحةُ الجافاسكربت تُعدّ كغيرها.
+        n = max(len(ks), d["n_secs"] or 0)
+        cnt[d["id"]] = n
+        per_up[d["uploader_id"]] = per_up.get(d["uploader_id"], 0) + n
+        if not n:
             blind[d["uploader_id"]] = blind.get(d["uploader_id"], 0) + 1
-    total = sum(len(v) for v in keys.values())
+    total = sum(cnt.values())
     dash_up = {d["id"]: d["uploader_id"]
                for d in c.execute("SELECT id, uploader_id FROM dashboards")}
 
     seen = {}
     for r in c.execute("SELECT user_id, dashboard_id, sec_key "
                        "FROM section_views"):
-        if r["sec_key"] in keys.get(r["dashboard_id"], ()):
+        ks = keys.get(r["dashboard_id"]) or ()
+        if (r["sec_key"] in ks) if ks else True:
             up = dash_up.get(r["dashboard_id"])
             seen.setdefault(r["user_id"], {})
             seen[r["user_id"]][up] = seen[r["user_id"]].get(up, 0) + 1
@@ -485,9 +511,10 @@ def reach_page(user):
                         for uid, n in sorted(blind.items(),
                                              key=lambda kv: -kv[1]))
         warn = (f'<p class="warn"><b>وخارج هذا الحساب '
-                f'{sum(blind.values())} لوحةً بلا مراسي تعليق</b> '
-                f'({who}). لا يُعلَّق على موضعٍ منها ولا تُسجَّل مشاهدةُ '
-                f'قسم، فهي ليست ناقصةَ العدّ بل غيرَ قابلةٍ للمراجعة.</p>')
+                f'{sum(blind.values())} لوحةً لم يُعرف عددُ أقسامها '
+                f'بعد</b> ({who}). لوحةٌ تبني نفسَها بجافاسكربت لا '
+                f'يُقرأ عددُ أقسامها من ملفّها، ويصل العددُ من أوّلِ '
+                f'متصفّحٍ يفتحها. فتدخل الحسابَ من تلقاء نفسها.</p>')
 
     body = []
     for r in rows:
@@ -1159,6 +1186,14 @@ class H(BaseHTTPRequestHandler):
                 c.close()
                 return self.json({"error": "no dashboard"}, 404)
             did, uid, t = d["id"], u["id"], now()
+
+            # **والعددُ يُرفع ولا يُنزَّل.** نافذةٌ ضيّقةٌ أو رسمٌ لم
+            # يُركَّب بعدُ يعطيان عددا أقلّ، فلو كُتب كما ورد لتذبذب
+            # المقام بين زيارةٍ وأخرى. فيُؤخذ الأكبرُ ويثبت.
+            n = b.get("nsecs")
+            if isinstance(n, int) and 0 < n < 10000:
+                c.execute("UPDATE dashboards SET n_secs=MAX("
+                          "COALESCE(n_secs,0), ?) WHERE id=?", (n, did))
 
             # `open=1` مرّةً واحدةً عند تحميل الصفحة لا مع كلّ دفعة
             if b.get("open"):
