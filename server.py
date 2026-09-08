@@ -475,8 +475,10 @@ def reach_rows():
             seen[r["user_id"]][up] = seen[r["user_id"]].get(up, 0) + 1
 
     out = []
+    # **والضيفُ ليس مراجعا.** حسابٌ مشترَكٌ للعرضِ لا شخصٌ يُتابَع، ووجودُه
+    # في الصفِّ يخلط من نقيس بلوغَه بمن لا نقيسه.
     for us in c.execute("SELECT id, name FROM users WHERE role='reviewer' "
-                        "ORDER BY name"):
+                        "AND username<>'guest_7780' ORDER BY name"):
         mine = seen.get(us["id"], {})
         got = {uid: mine.get(uid, 0) for uid in ups}
         tot_seen = sum(got.values())
@@ -505,6 +507,9 @@ def reach_page(user):
         f'<span class="k"><i class="sw {cls[uid]}"></i>{esc(ups[uid])} '
         f'<b>{per_up.get(uid, 0)}</b> قسماً</span>' for uid in order)
     keyb += ('<span class="k"><i class="sw un"></i>ما وصلوه</span>')
+    avg = (sum(100 * (1 - r["unseen"] / total) for r in rows) / len(rows)
+           if rows and total else 0.0)
+    live = sum(1 for r in rows if r["seen"])
     warn = ""
     if blind:
         who = "، ".join(f"{esc(ups.get(uid, '؟'))} {n}"
@@ -516,8 +521,10 @@ def reach_page(user):
                 f'يُقرأ عددُ أقسامها من ملفّها، ويصل العددُ من أوّلِ '
                 f'متصفّحٍ يفتحها. فتدخل الحسابَ من تلقاء نفسها.</p>')
 
+    # **والرقمُ الذي يُسأل عنه أوّلا هو كم بلغ، لا كم فاته.** فيتصدّر
+    # الصفَّ كبيرا، والتفصيلُ تحته صغيرا، والشريطُ بينهما.
     body = []
-    for r in rows:
+    for i, r in enumerate(rows):
         segs, lab = [], []
         for uid in order:
             v = r["by"].get(uid, 0)
@@ -532,14 +539,18 @@ def reach_page(user):
         if un > 0:
             segs.append(f'<i class="un" style="width:{un:.4f}%" '
                         f'title="لم يرَ {r["unseen"]} قسماً"></i>')
-        lab.append(f'<span class="un-t">{un:.1f}% ما وصلوه</span>')
+        got = 100 - un
         # **والصفُّ سطرٌ واحد.** كان ثلاثةَ أسطرٍ في بطاقةٍ بحاشية،
-        # فستُّ بطاقاتٍ تتجاوز الشاشة. والاسمُ والشريطُ والأرقامُ تسع
-        # في صفٍّ واحدٍ بلا أن يُفقَد شيء.
+        # فستُّ بطاقاتٍ تتجاوز الشاشة.
         body.append(
-            f'<div class="rw"><div class="nm">{esc(r["name"])}</div>'
-            f'<div class="bar100">{"".join(segs)}</div>'
-            f'<div class="lg">{"".join(lab)}</div></div>')
+            f'<div class="rw{" z" if got < 0.05 else ""}">'
+            f'<div class="nm">{esc(r["name"])}</div>'
+            f'<div class="big">{got:.1f}<small>%</small></div>'
+            f'<div class="trk"><div class="bar100">{"".join(segs)}</div>'
+            f'<div class="lg">{"".join(lab) or "لم يفتح شيئاً بعد"}</div>'
+            f'</div>'
+            f'<div class="cnt">{r["seen"]}<small> من {total}</small></div>'
+            f'</div>')
 
     return SHELL.format(title="التغطية", body=f"""
 <header class="top"><div class="brand">التغطية</div>
@@ -552,6 +563,8 @@ def reach_page(user):
   <p class="sub">المقام كلُّ الأقسام <b>القابلة للمراجعة</b>، وهي
      <b>{total}</b> قسماً، والشريط مئةٌ بالمئة لكلّ مراجع.</p>
   {warn}
+  <div class="tot"><b>{avg:.1f}%</b> متوسّط ما بلغه المراجعون
+     <span>· {live} من {len(rows)} فتحوا شيئاً</span></div>
   {"".join(body)}
 </main>""")
 
