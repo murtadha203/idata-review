@@ -427,24 +427,29 @@ OWNER = "murt_5132"
 
 
 def reach_rows():
-    """لكلِّ مراجع: كم قسماً رأى من لوحاتِ كلِّ رافع، وكم لم يرَ.
+    """لكلِّ مراجع: كم بالمئةِ بلغ من محتوى كلِّ رافع.
 
-    **والمقام كلُّ الأقسام المرفوعة**، لا أقسامَ لوحةٍ واحدة. فالسؤال
-    «كم من المحتوى بلغه» لا «كم أتمّ من لوحةٍ فتحها».
+    🔴 **والقياسُ باللوحةِ لا بالقسم.** كان المقامُ مجموعَ الأقسام، فمن
+    كانت لوحاتُه أكثرَ مراسيَ بدا صاحبَ المحتوى كلِّه: يوسفُ ناشرٌ أكثرُ
+    من مرتضى ويظهر بـ54 قسما مقابل 460. **والعيبُ في المقياسِ لا في
+    البيانات** — لوحةٌ من ثلاثين قسما ليست نصفَ لوحةٍ من ستّين.
 
-    🔴 **ويُحسب الظاهرُ في الملفّ لا المسجَّلُ في القاعدة.** الاستبدالُ
-    يُبقي مشاهداتٍ لأقسامٍ لم تعد موجودة، فلو عُدّت لبلغ مراجعٌ أكثرَ من
-    مئةٍ بالمئة. فتُقاطَع مفاتيحُ المشاهدةِ بمفاتيحِ الملفّ.
+    **فالحسابُ: نسبةُ ما قُرئ من كلِّ لوحةٍ على حدة، ثمّ وسطُها على عددِ
+    لوحاتِ صاحبها.** قرأ عشرةً بالمئةِ من ثلاثٍ من عشرِ لوحاتِ يوسف؟
+    فتلك ثلاثون نقطةً على عشرٍ، أي ‎3% من محتوى يوسف. واللوحةُ الصغيرةُ
+    تزن كالكبيرة، وهو الصواب: كلٌّ منهما عملٌ قائمٌ بنفسه.
+
+    **والشريطُ يبقى مئةً بالمئة** بترجيحِ كلِّ رافعٍ بعددِ لوحاتِه، فما
+    يظهر في الشريطِ حصّةٌ من المحتوى كلِّه، وما يُكتب تحته بلوغُ كلِّ
+    رافعٍ على حدة.
     """
     c = db()
+    migrate_n_secs(c)
     ups = {r["id"]: r["name"]
            for r in c.execute("SELECT id, name FROM users "
                               "WHERE role='uploader'")}
-    # 🔴 **ولوحةٌ بلا مراسٍ ليست لوحةً ناقصةَ العدّ، بل غيرَ قابلةٍ
-    # للمراجعةِ أصلاً.** لا `data-sec` فيها، فلا يُعلَّق على موضعٍ منها
-    # ولا تُسجَّل مشاهدةُ قسم. وسكوتُ الشاشةِ عنها يجعلها تقول «كلُّ
-    # المحتوى لفلان»، وهي إنّما تقول «كلُّ المحتوى **القابلِ للمراجعة**».
     keys, cnt, per_up, blind = {}, {}, {}, {}
+    dash_up = {}
     for d in c.execute("SELECT id, slug, uploader_id, n_secs "
                        "FROM dashboards"):
         try:
@@ -454,62 +459,76 @@ def reach_rows():
         except OSError:
             ks = set()
         keys[d["id"]] = ks
+        dash_up[d["id"]] = d["uploader_id"]
         # **والمقامُ أكبرُ العددين**: ما في الملفّ، وما أبلغ عنه المتصفّح
         # بعد اشتقاقِ المراسي. فلوحةُ الجافاسكربت تُعدّ كغيرها.
         n = max(len(ks), d["n_secs"] or 0)
         cnt[d["id"]] = n
-        per_up[d["uploader_id"]] = per_up.get(d["uploader_id"], 0) + n
-        if not n:
+        if n:
+            per_up[d["uploader_id"]] = per_up.get(d["uploader_id"], 0) + 1
+        else:
             blind[d["uploader_id"]] = blind.get(d["uploader_id"], 0) + 1
-    total = sum(cnt.values())
-    dash_up = {d["id"]: d["uploader_id"]
-               for d in c.execute("SELECT id, uploader_id FROM dashboards")}
 
+    # ما رآه كلُّ مراجعٍ في كلِّ لوحة
     seen = {}
     for r in c.execute("SELECT user_id, dashboard_id, sec_key "
                        "FROM section_views"):
         ks = keys.get(r["dashboard_id"]) or ()
         if (r["sec_key"] in ks) if ks else True:
-            up = dash_up.get(r["dashboard_id"])
             seen.setdefault(r["user_id"], {})
-            seen[r["user_id"]][up] = seen[r["user_id"]].get(up, 0) + 1
+            seen[r["user_id"]][r["dashboard_id"]] = (
+                seen[r["user_id"]].get(r["dashboard_id"], 0) + 1)
 
+    n_known = sum(per_up.values())
     out = []
-    # **والضيفُ ليس مراجعا.** حسابٌ مشترَكٌ للعرضِ لا شخصٌ يُتابَع، ووجودُه
-    # في الصفِّ يخلط من نقيس بلوغَه بمن لا نقيسه.
+    # **والضيفُ ليس مراجعا.** حسابٌ مشترَكٌ للعرضِ لا شخصٌ يُتابَع.
     for us in c.execute("SELECT id, name FROM users WHERE role='reviewer' "
                         "AND username<>'guest_7780' ORDER BY name"):
         mine = seen.get(us["id"], {})
-        got = {uid: mine.get(uid, 0) for uid in ups}
-        tot_seen = sum(got.values())
-        out.append({"name": us["name"], "by": got,
-                    "seen": tot_seen, "unseen": max(0, total - tot_seen)})
+        reach, seg, n_dash = {}, {}, 0
+        for uid in ups:
+            tot = 0.0
+            for did, up in dash_up.items():
+                if up != uid or not cnt[did]:
+                    continue
+                # **والنسبةُ تُسقَف بالمئة.** مشاهدةٌ لقسمٍ حُذف من نسخةٍ
+                # لاحقةٍ قد تتجاوز عددَ الأقسامِ القائمة.
+                tot += min(1.0, mine.get(did, 0) / cnt[did])
+            k = per_up.get(uid, 0)
+            reach[uid] = 100 * tot / k if k else 0.0
+            seg[uid] = 100 * tot / n_known if n_known else 0.0
+            n_dash += int(sum(1 for did, up in dash_up.items()
+                              if up == uid and cnt[did] and mine.get(did)))
+        got = sum(seg.values())
+        out.append({"name": us["name"], "reach": reach, "seg": seg,
+                    "got": got, "unseen": max(0.0, 100 - got),
+                    "n_dash": n_dash})
     c.close()
     # **والترتيبُ بمن بلغ أكثر**، فالصفُّ الأوّلُ يقول أين نحن لا أبجديّة
-    out.sort(key=lambda r: -r["seen"])
-    return out, total, ups, per_up, blind
+    out.sort(key=lambda r: -r["got"])
+    return out, n_known, ups, per_up, blind
 
 
 def reach_page(user):
-    rows, total, ups, per_up, blind = reach_rows()
+    rows, n_known, ups, per_up, blind = reach_rows()
     order = sorted(ups, key=lambda i: (ups[i] != "يوسف", ups[i]))
     cls = {}
     for n, uid in enumerate(order):
         cls[uid] = "u1" if n == 0 else ("u2" if n == 1 else "u3")
-    if not total:
+    if not n_known:
         return SHELL.format(title="التغطية", body=(
             '<header class="top"><div class="brand">التغطية</div>'
             '<div class="who"><a href="/" class="lnk">اللوحات</a></div>'
-            '</header><main class="wrap"><p>لا أقسامَ مرفوعةً بعد.</p>'
-            '</main>'))
+            '</header><main class="wrap"><p>لا لوحةَ يُعرف عددُ أقسامها '
+            'بعد.</p></main>'))
 
     keyb = "".join(
         f'<span class="k"><i class="sw {cls[uid]}"></i>{esc(ups[uid])} '
-        f'<b>{per_up.get(uid, 0)}</b> قسماً</span>' for uid in order)
-    keyb += ('<span class="k"><i class="sw un"></i>ما وصلوه</span>')
-    avg = (sum(100 * (1 - r["unseen"] / total) for r in rows) / len(rows)
-           if rows and total else 0.0)
-    live = sum(1 for r in rows if r["seen"])
+        f'<b>{per_up.get(uid, 0)}</b> لوحة</span>' for uid in order)
+    keyb += '<span class="k"><i class="sw un"></i>ما وصلوه</span>'
+
+    avg = sum(r["got"] for r in rows) / len(rows) if rows else 0.0
+    live = sum(1 for r in rows if r["got"] > 0.005)
     warn = ""
     if blind:
         who = "، ".join(f"{esc(ups.get(uid, '؟'))} {n}"
@@ -521,36 +540,29 @@ def reach_page(user):
                 f'يُقرأ عددُ أقسامها من ملفّها، ويصل العددُ من أوّلِ '
                 f'متصفّحٍ يفتحها. فتدخل الحسابَ من تلقاء نفسها.</p>')
 
-    # **والرقمُ الذي يُسأل عنه أوّلا هو كم بلغ، لا كم فاته.** فيتصدّر
-    # الصفَّ كبيرا، والتفصيلُ تحته صغيرا، والشريطُ بينهما.
     body = []
-    for i, r in enumerate(rows):
+    for r in rows:
         segs, lab = [], []
         for uid in order:
-            v = r["by"].get(uid, 0)
-            if not v:
-                continue
-            pcv = 100 * v / total
-            segs.append(f'<i class="{cls[uid]}" style="width:{pcv:.4f}%" '
-                        f'title="{esc(ups[uid])}: {v} قسماً"></i>')
-            lab.append(f'<span class="{cls[uid]}-t">{pcv:.1f}% '
-                       f'{esc(ups[uid])}</span>')
-        un = 100 * r["unseen"] / total
-        if un > 0:
-            segs.append(f'<i class="un" style="width:{un:.4f}%" '
-                        f'title="لم يرَ {r["unseen"]} قسماً"></i>')
-        got = 100 - un
-        # **والصفُّ سطرٌ واحد.** كان ثلاثةَ أسطرٍ في بطاقةٍ بحاشية،
-        # فستُّ بطاقاتٍ تتجاوز الشاشة.
+            if r["seg"][uid] > 0.0005:
+                segs.append(f'<i class="{cls[uid]}" '
+                            f'style="width:{r["seg"][uid]:.4f}%" '
+                            f'title="{esc(ups[uid])}"></i>')
+            if per_up.get(uid):
+                lab.append(f'<span class="{cls[uid]}-t">'
+                           f'{r["reach"][uid]:.1f}% من محتوى '
+                           f'{esc(ups[uid])}</span>')
+        if r["unseen"] > 0:
+            segs.append(f'<i class="un" style="width:{r["unseen"]:.4f}%"'
+                        f'></i>')
         body.append(
-            f'<div class="rw{" z" if got < 0.05 else ""}">'
+            f'<div class="rw{" z" if r["got"] < 0.05 else ""}">'
             f'<div class="nm">{esc(r["name"])}</div>'
-            f'<div class="big">{got:.1f}<small>%</small></div>'
+            f'<div class="big">{r["got"]:.1f}<small>%</small></div>'
             f'<div class="trk"><div class="bar100">{"".join(segs)}</div>'
-            f'<div class="lg">{"".join(lab) or "لم يفتح شيئاً بعد"}</div>'
-            f'</div>'
-            f'<div class="cnt">{r["seen"]}<small> من {total}</small></div>'
-            f'</div>')
+            f'<div class="lg">{"".join(lab)}</div></div>'
+            f'<div class="cnt">{r["n_dash"]}<small> من {n_known}</small>'
+            f'</div></div>')
 
     return SHELL.format(title="التغطية", body=f"""
 <header class="top"><div class="brand">التغطية</div>
@@ -560,8 +572,9 @@ def reach_page(user):
 <main class="wrap reach">
   <div class="hd"><h2>كم من المحتوى بلغ كلَّ مراجع</h2>
     <div class="keys">{keyb}</div></div>
-  <p class="sub">المقام كلُّ الأقسام <b>القابلة للمراجعة</b>، وهي
-     <b>{total}</b> قسماً، والشريط مئةٌ بالمئة لكلّ مراجع.</p>
+  <p class="sub">لكلِّ لوحةٍ نسبةُ ما قُرئ منها، ووسطُها على عددِ لوحاتِ
+     صاحبها. فاللوحةُ الصغيرةُ تزن كالكبيرة، و<b>{n_known}</b> لوحةً
+     في الحساب.</p>
   {warn}
   <div class="tot"><b>{avg:.1f}%</b> متوسّط ما بلغه المراجعون
      <span>· {live} من {len(rows)} فتحوا شيئاً</span></div>
