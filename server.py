@@ -420,7 +420,11 @@ def reach_rows():
     ups = {r["id"]: r["name"]
            for r in c.execute("SELECT id, name FROM users "
                               "WHERE role='uploader'")}
-    keys, per_up = {}, {}
+    # 🔴 **ولوحةٌ بلا مراسٍ ليست لوحةً ناقصةَ العدّ، بل غيرَ قابلةٍ
+    # للمراجعةِ أصلاً.** لا `data-sec` فيها، فلا يُعلَّق على موضعٍ منها
+    # ولا تُسجَّل مشاهدةُ قسم. وسكوتُ الشاشةِ عنها يجعلها تقول «كلُّ
+    # المحتوى لفلان»، وهي إنّما تقول «كلُّ المحتوى **القابلِ للمراجعة**».
+    keys, per_up, blind = {}, {}, {}
     for d in c.execute("SELECT id, slug, uploader_id FROM dashboards"):
         try:
             with open(os.path.join(DASH_DIR, d["slug"] + ".html"),
@@ -430,6 +434,8 @@ def reach_rows():
             ks = set()
         keys[d["id"]] = ks
         per_up[d["uploader_id"]] = per_up.get(d["uploader_id"], 0) + len(ks)
+        if not ks:
+            blind[d["uploader_id"]] = blind.get(d["uploader_id"], 0) + 1
     total = sum(len(v) for v in keys.values())
     dash_up = {d["id"]: d["uploader_id"]
                for d in c.execute("SELECT id, uploader_id FROM dashboards")}
@@ -453,11 +459,11 @@ def reach_rows():
     c.close()
     # **والترتيبُ بمن بلغ أكثر**، فالصفُّ الأوّلُ يقول أين نحن لا أبجديّة
     out.sort(key=lambda r: -r["seen"])
-    return out, total, ups, per_up
+    return out, total, ups, per_up, blind
 
 
 def reach_page(user):
-    rows, total, ups, per_up = reach_rows()
+    rows, total, ups, per_up, blind = reach_rows()
     order = sorted(ups, key=lambda i: (ups[i] != "يوسف", ups[i]))
     cls = {}
     for n, uid in enumerate(order):
@@ -473,6 +479,15 @@ def reach_page(user):
         f'<span class="k"><i class="sw {cls[uid]}"></i>{esc(ups[uid])} '
         f'<b>{per_up.get(uid, 0)}</b> قسماً</span>' for uid in order)
     keyb += ('<span class="k"><i class="sw un"></i>ما وصلوه</span>')
+    warn = ""
+    if blind:
+        who = "، ".join(f"{esc(ups.get(uid, '؟'))} {n}"
+                        for uid, n in sorted(blind.items(),
+                                             key=lambda kv: -kv[1]))
+        warn = (f'<p class="warn"><b>وخارج هذا الحساب '
+                f'{sum(blind.values())} لوحةً بلا مراسي تعليق</b> '
+                f'({who}). لا يُعلَّق على موضعٍ منها ولا تُسجَّل مشاهدةُ '
+                f'قسم، فهي ليست ناقصةَ العدّ بل غيرَ قابلةٍ للمراجعة.</p>')
 
     body = []
     for r in rows:
@@ -484,17 +499,20 @@ def reach_page(user):
             pcv = 100 * v / total
             segs.append(f'<i class="{cls[uid]}" style="width:{pcv:.4f}%" '
                         f'title="{esc(ups[uid])}: {v} قسماً"></i>')
-            lab.append(f'<span class="{cls[uid]}-t">{pcv:.0f}% '
+            lab.append(f'<span class="{cls[uid]}-t">{pcv:.1f}% '
                        f'{esc(ups[uid])}</span>')
         un = 100 * r["unseen"] / total
         if un > 0:
             segs.append(f'<i class="un" style="width:{un:.4f}%" '
                         f'title="لم يرَ {r["unseen"]} قسماً"></i>')
-        lab.append(f'<span class="un-t">{un:.0f}% ما وصلوه</span>')
+        lab.append(f'<span class="un-t">{un:.1f}% ما وصلوه</span>')
+        # **والصفُّ سطرٌ واحد.** كان ثلاثةَ أسطرٍ في بطاقةٍ بحاشية،
+        # فستُّ بطاقاتٍ تتجاوز الشاشة. والاسمُ والشريطُ والأرقامُ تسع
+        # في صفٍّ واحدٍ بلا أن يُفقَد شيء.
         body.append(
             f'<div class="rw"><div class="nm">{esc(r["name"])}</div>'
             f'<div class="bar100">{"".join(segs)}</div>'
-            f'<div class="lg">{" ".join(lab)}</div></div>')
+            f'<div class="lg">{"".join(lab)}</div></div>')
 
     return SHELL.format(title="التغطية", body=f"""
 <header class="top"><div class="brand">التغطية</div>
@@ -502,10 +520,11 @@ def reach_page(user):
     <a href="/" class="lnk">اللوحات</a>
     <a href="/out" class="lnk">خروج</a></div></header>
 <main class="wrap reach">
-  <h2>كم من المحتوى بلغ كلَّ مراجع</h2>
-  <p class="sub">المقام كلُّ الأقسام المرفوعة، وهي <b>{total}</b> قسماً.
-     والشريط مئةٌ بالمئة لكلّ مراجع.</p>
-  <div class="keys">{keyb}</div>
+  <div class="hd"><h2>كم من المحتوى بلغ كلَّ مراجع</h2>
+    <div class="keys">{keyb}</div></div>
+  <p class="sub">المقام كلُّ الأقسام <b>القابلة للمراجعة</b>، وهي
+     <b>{total}</b> قسماً، والشريط مئةٌ بالمئة لكلّ مراجع.</p>
+  {warn}
   {"".join(body)}
 </main>""")
 
