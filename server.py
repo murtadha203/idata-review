@@ -400,6 +400,116 @@ def owns(conn, uid, slug=None, did=None):
     return bool(r) and r["uploader_id"] == uid
 
 
+# ── التغطية: من قرأ ماذا، ولمن ─────────────────────────────────────────
+# **الشاشةُ لمرتضى وحدَه** بطلبه، لا لكلِّ من له دورُ رفع. ويوسفُ رافعٌ
+# مثلُه، فلو فُتحت بالدور لقرأ فيها نصيبَه من نصيبِ زميله.
+OWNER = "murt_5132"
+
+
+def reach_rows():
+    """لكلِّ مراجع: كم قسماً رأى من لوحاتِ كلِّ رافع، وكم لم يرَ.
+
+    **والمقام كلُّ الأقسام المرفوعة**، لا أقسامَ لوحةٍ واحدة. فالسؤال
+    «كم من المحتوى بلغه» لا «كم أتمّ من لوحةٍ فتحها».
+
+    🔴 **ويُحسب الظاهرُ في الملفّ لا المسجَّلُ في القاعدة.** الاستبدالُ
+    يُبقي مشاهداتٍ لأقسامٍ لم تعد موجودة، فلو عُدّت لبلغ مراجعٌ أكثرَ من
+    مئةٍ بالمئة. فتُقاطَع مفاتيحُ المشاهدةِ بمفاتيحِ الملفّ.
+    """
+    c = db()
+    ups = {r["id"]: r["name"]
+           for r in c.execute("SELECT id, name FROM users "
+                              "WHERE role='uploader'")}
+    keys, per_up = {}, {}
+    for d in c.execute("SELECT id, slug, uploader_id FROM dashboards"):
+        try:
+            with open(os.path.join(DASH_DIR, d["slug"] + ".html"),
+                      encoding="utf-8") as fh:
+                ks = set(re.findall(r'data-sec="([^"]+)"', fh.read()))
+        except OSError:
+            ks = set()
+        keys[d["id"]] = ks
+        per_up[d["uploader_id"]] = per_up.get(d["uploader_id"], 0) + len(ks)
+    total = sum(len(v) for v in keys.values())
+    dash_up = {d["id"]: d["uploader_id"]
+               for d in c.execute("SELECT id, uploader_id FROM dashboards")}
+
+    seen = {}
+    for r in c.execute("SELECT user_id, dashboard_id, sec_key "
+                       "FROM section_views"):
+        if r["sec_key"] in keys.get(r["dashboard_id"], ()):
+            up = dash_up.get(r["dashboard_id"])
+            seen.setdefault(r["user_id"], {})
+            seen[r["user_id"]][up] = seen[r["user_id"]].get(up, 0) + 1
+
+    out = []
+    for us in c.execute("SELECT id, name FROM users WHERE role='reviewer' "
+                        "ORDER BY name"):
+        mine = seen.get(us["id"], {})
+        got = {uid: mine.get(uid, 0) for uid in ups}
+        tot_seen = sum(got.values())
+        out.append({"name": us["name"], "by": got,
+                    "seen": tot_seen, "unseen": max(0, total - tot_seen)})
+    c.close()
+    # **والترتيبُ بمن بلغ أكثر**، فالصفُّ الأوّلُ يقول أين نحن لا أبجديّة
+    out.sort(key=lambda r: -r["seen"])
+    return out, total, ups, per_up
+
+
+def reach_page(user):
+    rows, total, ups, per_up = reach_rows()
+    order = sorted(ups, key=lambda i: (ups[i] != "يوسف", ups[i]))
+    cls = {}
+    for n, uid in enumerate(order):
+        cls[uid] = "u1" if n == 0 else ("u2" if n == 1 else "u3")
+    if not total:
+        return SHELL.format(title="التغطية", body=(
+            '<header class="top"><div class="brand">التغطية</div>'
+            '<div class="who"><a href="/" class="lnk">اللوحات</a></div>'
+            '</header><main class="wrap"><p>لا أقسامَ مرفوعةً بعد.</p>'
+            '</main>'))
+
+    keyb = "".join(
+        f'<span class="k"><i class="sw {cls[uid]}"></i>{esc(ups[uid])} '
+        f'<b>{per_up.get(uid, 0)}</b> قسماً</span>' for uid in order)
+    keyb += ('<span class="k"><i class="sw un"></i>ما وصلوه</span>')
+
+    body = []
+    for r in rows:
+        segs, lab = [], []
+        for uid in order:
+            v = r["by"].get(uid, 0)
+            if not v:
+                continue
+            pcv = 100 * v / total
+            segs.append(f'<i class="{cls[uid]}" style="width:{pcv:.4f}%" '
+                        f'title="{esc(ups[uid])}: {v} قسماً"></i>')
+            lab.append(f'<span class="{cls[uid]}-t">{pcv:.0f}% '
+                       f'{esc(ups[uid])}</span>')
+        un = 100 * r["unseen"] / total
+        if un > 0:
+            segs.append(f'<i class="un" style="width:{un:.4f}%" '
+                        f'title="لم يرَ {r["unseen"]} قسماً"></i>')
+        lab.append(f'<span class="un-t">{un:.0f}% ما وصلوه</span>')
+        body.append(
+            f'<div class="rw"><div class="nm">{esc(r["name"])}</div>'
+            f'<div class="bar100">{"".join(segs)}</div>'
+            f'<div class="lg">{" ".join(lab)}</div></div>')
+
+    return SHELL.format(title="التغطية", body=f"""
+<header class="top"><div class="brand">التغطية</div>
+  <div class="who"><span>{esc(user['name'])}</span>
+    <a href="/" class="lnk">اللوحات</a>
+    <a href="/out" class="lnk">خروج</a></div></header>
+<main class="wrap reach">
+  <h2>كم من المحتوى بلغ كلَّ مراجع</h2>
+  <p class="sub">المقام كلُّ الأقسام المرفوعة، وهي <b>{total}</b> قسماً.
+     والشريط مئةٌ بالمئة لكلّ مراجع.</p>
+  <div class="keys">{keyb}</div>
+  {"".join(body)}
+</main>""")
+
+
 def reviewer_tags(uid):
     """يردّ {رقم الداشبورد: (المفتاح، النصّ)} — أو لا شيءَ لمن أتمّه."""
     import digest
@@ -545,6 +655,8 @@ def list_page(user, rows, tags=None):
 <header class="top"><div class="brand">مراجعة اللوحات</div>
   <div class="who"><span>{esc(user['name'])}</span>
     <span class="role">{'رفع' if can_add else 'مراجعة'}</span>
+    {'<a href="/reach" class="lnk">التغطية</a>'
+     if user["username"] == OWNER else ""}
     <a href="/export" class="lnk">تصدير</a>
     <a href="/out" class="lnk">خروج</a></div></header>
 <main class="wrap">
@@ -809,6 +921,13 @@ class H(BaseHTTPRequestHandler):
 
         # **ولا تُرسَل رسالةٌ لم تُقرأ.** هذا المسارُ يُظهر نصَّ ما سيصل
         # كلَّ مراجعٍ الأحدَ القادم، بلا إرسال — فيُقرأ قبل أن يُفعَّل.
+        if path == "/reach":
+            # **وليست بالدور بل بالاسم**، فيوسفُ رافعٌ ولا يقرأ نصيبَه
+            # من نصيبِ زميله.
+            if u["username"] != OWNER:
+                return self.send("403", 403)
+            return self.send(reach_page(u))
+
         if path == "/digest":
             if u["role"] != "uploader":
                 return self.send("403", 403)
