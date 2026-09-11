@@ -742,9 +742,35 @@
     return d;
   }
 
+  /* **والتعليقُ في فصلٍ مخفيٍّ لا يُوصَل إليه بالتمرير وحدَه.** القالبُ
+     يُظهر فصلاً واحداً ويخفي الباقي بـ`display:none`، فكان النقرُ على
+     تعليقٍ في فصلٍ آخر لا يفعل شيئاً. فيُكشف الطريقُ إلى العنصر أوّلاً
+     بأدوات الصفحة نفسِها: اللغةُ الأخرى بـ`switchLang`، والفصلُ بنقر
+     زرِّ تبويبه، والطيّةُ المغلقة تُفتح. */
+  function reveal(n) {
+    const wrap = n.closest(".wrap[data-lang]");
+    if (wrap && !document.body.classList.contains("lang-" + wrap.dataset.lang)
+        && typeof window.switchLang === "function") window.switchLang();
+    const ch = n.closest(".chapter");
+    if (ch && ch.classList.contains("hide") && wrap) {
+      const tab = wrap.querySelector(`[data-go="${CSS.escape(ch.dataset.i || "")}"]`);
+      if (tab) tab.click();
+    }
+    for (let d = n.closest("details"); d; d = d.parentElement.closest("details"))
+      d.open = true;
+  }
+
   function jump(loc) {
     const n = loc.node || loc.sec;
     if (!n) return alert("العنصر لم يعد موجوداً في اللوحة.");
+    const hidden = !n.getClientRects().length;
+    if (hidden) reveal(n);
+    // وتبديلُ الفصل يمرّر الصفحةَ إلى شريط التبويب، فيُنتظر حتّى يستقرّ
+    if (hidden) return setTimeout(() => settle(n, loc), 400);
+    settle(n, loc);
+  }
+
+  function settle(n, loc) {
     n.scrollIntoView({ behavior: "smooth", block: "center" });
     n.classList.add("rv-flash");
     setTimeout(() => n.classList.remove("rv-flash"), 1600);
